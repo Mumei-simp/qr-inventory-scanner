@@ -3,49 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pro Inventory Scanner</title>
+    <title>Rescue Inventory Scanner</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         :root { --primary: #2563eb; --bg: #f8fafc; }
         body { font-family: system-ui, sans-serif; background: var(--bg); padding: 10px; display: flex; flex-direction: column; align-items: center; margin: 0; }
         
-        /* LARGER CAMERA CONTAINER */
         #reader-wrapper { 
-            position: relative; 
-            width: 100%; 
-            max-width: 600px; 
-            height: 400px; /* Made taller for better visibility */
-            border-radius: 12px; 
-            overflow: hidden; 
-            background: #000; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            position: relative; width: 100%; max-width: 600px; height: 350px; 
+            border-radius: 12px; overflow: hidden; background: #000; 
+            border: 3px solid #cbd5e1;
         }
         #reader { width: 100%; height: 100%; }
         
-        /* Laser Guide - Scaled up */
         .laser {
-            position: absolute; top: 50%; left: 5%; width: 90%; height: 3px;
-            background: rgba(255, 0, 0, 0.8); box-shadow: 0 0 12px red;
-            z-index: 10; pointer-events: none;
-            animation: scanning 2.5s infinite ease-in-out;
+            position: absolute; top: 50%; left: 5%; width: 90%; height: 2px;
+            background: red; box-shadow: 0 0 8px red; z-index: 10; pointer-events: none;
         }
-        @keyframes scanning { 0%, 100% { transform: translateY(-30px); } 50% { transform: translateY(30px); } }
 
-        .card { background: white; width: 100%; max-width: 600px; padding: 20px; border-radius: 15px; margin-top: 15px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); box-sizing: border-box; }
+        .card { background: white; width: 100%; max-width: 600px; padding: 20px; border-radius: 15px; margin-top: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); box-sizing: border-box; }
         .status-pill { display: inline-block; padding: 8px 16px; border-radius: 9999px; font-size: 0.9rem; font-weight: 700; margin-bottom: 15px; }
-        .syncing { background: #fef9c3; color: #854d0e; }
         .ready { background: #dcfce7; color: #166534; }
+        .error { background: #fee2e2; color: #991b1b; }
         
-        .control-group { margin-bottom: 20px; text-align: left; }
-        label { font-size: 0.9rem; font-weight: 600; color: #64748b; display: block; margin-bottom: 8px; }
-        select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-size: 16px; }
-        
-        #zoom-container { background: #f1f5f9; padding: 10px; border-radius: 8px; }
-        input[type="range"] { width: 100%; height: 25px; cursor: pointer; }
-        
-        input[type="text"] { width: 100%; padding: 14px; margin: 10px 0; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
-        button { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 1.1rem; }
-        .switch-box { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; font-weight: 600; color: #334155; }
+        select { width: 100%; padding: 12px; border-radius: 8px; margin-bottom: 10px; font-size: 16px; }
+        #zoom-container { background: #f1f5f9; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
+        input[type="range"] { width: 100%; }
+        button { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -56,35 +40,31 @@
     </div>
 
     <div class="card">
-        <div id="status" class="status-pill syncing">Initializing...</div>
+        <div id="status" class="status-pill ready">Syncing...</div>
         
-        <div class="control-group">
-            <label>📷 Lens Selection:</label>
-            <select id="cam-list" onchange="switchCamera(this.value)"></select>
-        </div>
+        <select id="cam-list" onchange="switchCamera(this.value)"></select>
         
-        <div id="zoom-container" class="control-group" style="display:none;">
-            <label>🔍 Zoom (Fixes Focus for Small Barcodes):</label>
+        <div id="zoom-container" style="display:none;">
+            <label style="font-size: 0.8rem;">Zoom Control:</label>
             <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" oninput="applyZoom(this.value)">
         </div>
 
-        <div class="switch-box">
-            <input type="checkbox" id="cont-scan">
-            <label for="cont-scan">Continuous Scan (Auto-Push)</label>
+        <div style="display:flex; gap:10px; margin-bottom:15px;">
+            <input type="checkbox" id="cont-scan"> <label for="cont-scan">Auto-Push</label>
         </div>
 
-        <div id="manual-form" style="display: none; border-top: 2px solid #f1f5f9; padding-top: 15px;">
-            <p style="margin: 0; font-size: 0.85rem; color: #64748b;">Detected Serial:</p>
-            <strong id="display-serial" style="font-size: 1.4rem; color: var(--primary); word-break: break-all;">---</strong>
-            <input type="text" id="item-name" placeholder="Item Name (Optional)">
+        <div id="manual-form" style="display: none; border-top: 1px solid #eee; padding-top:10px;">
+            <p style="font-size: 0.8rem; color: #666; margin:0;">Serial Detected:</p>
+            <strong id="display-serial" style="font-size: 1.2rem; color: var(--primary);">---</strong>
+            <input type="text" id="item-name" placeholder="Item Name (Optional)" style="width:100%; padding:12px; margin:10px 0; border:1px solid #ccc; border-radius:8px;">
             <button onclick="manualPush()">Push to Sheet</button>
         </div>
         
-        <button id="torch-btn" style="display:none; margin-top:10px; background: #475569;" onclick="toggleTorch()">Toggle Flashlight</button>
+        <button id="torch-btn" style="display:none; margin-top:10px; background:#475569;" onclick="toggleTorch()">Toggle Flashlight</button>
     </div>
 
     <script>
-        // PASTE YOUR ACTUAL URL HERE
+        // REPLACE WITH YOUR URL
         const scriptURL = "https://script.google.com/macros/s/AKfycbzNSy4eQ5Tm3ZR429ozDAp7MekYHzQu5qEmLAFgYpqtUaxHGAIjMcEG5a4R9vqrrhKn/exec";
         
         let html5QrCode;
@@ -97,117 +77,114 @@
                 const cameras = await Html5Qrcode.getCameras();
                 if (cameras && cameras.length) {
                     const camList = document.getElementById('cam-list');
-                    // Reverse the list so the BACK camera usually shows up first
-                    cameras.reverse().forEach((camera, index) => {
+                    // Check labels for "back" to help find the right lens
+                    cameras.forEach((camera, index) => {
                         const option = document.createElement('option');
                         option.value = camera.id;
                         option.text = camera.label || `Camera ${index + 1}`;
                         camList.appendChild(option);
                     });
-                    // Force start with the first "back" camera found
-                    startScanner(cameras[0].id);
+                    // Pick the last camera (often the main back camera)
+                    startScanner(cameras[cameras.length - 1].id);
                 }
-            } catch (err) {
-                statusEl.innerText = "Camera Permission Denied.";
-            }
+            } catch (err) { document.getElementById('status').innerText = "Permission Denied"; }
             loadCache();
         }
 
         async function startScanner(cameraId) {
-            if (html5QrCode) { await html5QrCode.stop(); }
+            if (html5QrCode) { 
+                try { await html5QrCode.stop(); } catch (e) {} 
+            }
+            
             html5QrCode = new Html5Qrcode("reader");
 
             const config = { 
-                fps: 25, 
-                // BIGGER SCANNING AREA (width x height)
-                qrbox: { width: 350, height: 180 }, 
-                aspectRatio: 1.0, 
+                fps: 20, 
+                qrbox: { width: 300, height: 200 }, // Scaled down slightly to prevent lag
+                aspectRatio: 1.0,
+                // Using standard constraints to prevent the "108MP noise" crash
                 videoConstraints: { 
                     deviceId: { exact: cameraId },
-                    width: { ideal: 4096 }, 
-                    height: { ideal: 2160 } 
+                    facingMode: "environment"
                 }
             };
 
             try {
                 await html5QrCode.start(cameraId, config, onScanSuccess);
                 checkCapabilities();
-            } catch (err) { statusEl.innerText = "Error starting camera."; }
-        }
-
-        async function checkCapabilities() {
-            const track = html5QrCode.getRunningTrack();
-            const capabilities = track.getCapabilities();
-            if (capabilities.torch) document.getElementById('torch-btn').style.display = "block";
-            if (capabilities.zoom) {
-                const slider = document.getElementById('zoom-slider');
-                slider.min = capabilities.zoom.min;
-                slider.max = capabilities.zoom.max;
-                slider.step = capabilities.zoom.step;
-                document.getElementById('zoom-container').style.display = "block";
+            } catch (err) { 
+                console.error(err);
+                // Fail-safe: Try without exact device ID if it fails
+                html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
             }
         }
 
         function onScanSuccess(decodedText) {
             if (isLock) return;
-            if (cache.has(decodedText)) {
-                statusEl.innerText = `Duplicate: ${decodedText}`;
-                return;
-            }
+            if (cache.has(decodedText)) return;
 
+            const display = document.getElementById('display-serial');
             if (document.getElementById('cont-scan').checked) {
                 autoPush(decodedText);
-            } else if (decodedText !== document.getElementById('display-serial').innerText) {
-                statusEl.innerText = "Code Captured!";
-                document.getElementById('display-serial').innerText = decodedText;
-                document.getElementById('item-name').value = ""; 
+            } else if (decodedText !== display.innerText) {
+                display.innerText = decodedText;
                 document.getElementById('manual-form').style.display = "block";
-                if (navigator.vibrate) navigator.vibrate(70);
+                if (navigator.vibrate) navigator.vibrate(50);
             }
         }
 
-        // --- Core Functions ---
-        function applyZoom(val) {
-            html5QrCode.getRunningTrack().applyConstraints({ advanced: [{ zoom: val }] });
+        // --- Helper Functions ---
+        async function checkCapabilities() {
+            const track = html5QrCode.getRunningTrack();
+            const caps = track.getCapabilities();
+            if (caps.torch) document.getElementById('torch-btn').style.display = "block";
+            if (caps.zoom) {
+                const s = document.getElementById('zoom-slider');
+                s.min = caps.zoom.min; s.max = caps.zoom.max; s.step = caps.zoom.step;
+                document.getElementById('zoom-container').style.display = "block";
+            }
         }
+
+        function applyZoom(val) { html5QrCode.getRunningTrack().applyConstraints({advanced: [{zoom: val}]}); }
         function switchCamera(val) { startScanner(val); }
-        async function toggleTorch() {
-            isTorchOn = !isTorchOn;
-            await html5QrCode.applyVideoConstraints({ advanced: [{ torch: isTorchOn }] });
+        async function toggleTorch() { 
+            isTorchOn = !isTorchOn; 
+            await html5QrCode.applyVideoConstraints({advanced: [{torch: isTorchOn}]}); 
         }
+
         async function loadCache() {
             try {
                 const res = await fetch(`${scriptURL}?action=fetch`);
                 const data = await res.json();
                 data.serials.forEach(s => cache.add(String(s)));
-                document.getElementById('status').innerText = `Ready: ${cache.size} cached`;
-                document.getElementById('status').className = "status-pill ready";
-            } catch (e) { document.getElementById('status').innerText = "Sync Error."; }
+                document.getElementById('status').innerText = `Ready: ${cache.size} Items`;
+            } catch (e) { document.getElementById('status').innerText = "Offline Mode"; }
         }
+
         async function sendData(name, serial) {
-            const query = `?action=push&name=${encodeURIComponent(name)}&serial=${encodeURIComponent(serial)}`;
+            isLock = true;
             try {
-                const res = await fetch(scriptURL + query);
+                const res = await fetch(`${scriptURL}?action=push&name=${encodeURIComponent(name)}&serial=${encodeURIComponent(serial)}`);
                 const result = await res.json();
                 if (result.status === "success") {
                     cache.add(serial);
-                    document.getElementById('status').innerText = `Successfully Added!`;
+                    document.getElementById('status').innerText = "Added Successfully!";
                 }
-            } catch (e) { document.getElementById('status').innerText = "Push Error."; }
-        }
-        async function autoPush(serial) {
-            isLock = true;
-            document.getElementById('status').innerText = `Auto-Pushing...`;
-            await sendData("", serial);
-            setTimeout(() => { isLock = false; }, 2500);
-        }
-        async function manualPush() {
-            isLock = true;
-            await sendData(document.getElementById('item-name').value, document.getElementById('display-serial').innerText);
-            document.getElementById('manual-form').style.display = "none";
-            document.getElementById('item-name').value = "";
-            document.getElementById('display-serial').innerText = "---";
+            } catch (e) { alert("Push Failed"); }
             isLock = false;
+        }
+
+        async function autoPush(serial) {
+            await sendData("", serial);
+            setTimeout(() => { isLock = false; }, 2000);
+        }
+
+        async function manualPush() {
+            const name = document.getElementById('item-name').value;
+            const serial = document.getElementById('display-serial').innerText;
+            await sendData(name, serial);
+            document.getElementById('manual-form').style.display = "none";
+            document.getElementById('display-serial').innerText = "---";
         }
 
         window.addEventListener('DOMContentLoaded', init);
