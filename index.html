@@ -3,47 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Pro Scanner</title>
+    <title>Pro Inventory Scanner</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         :root { --primary: #2563eb; --bg: #f8fafc; }
         body { font-family: system-ui, sans-serif; background: var(--bg); padding: 10px; display: flex; flex-direction: column; align-items: center; margin: 0; }
         
-        /* Fixed Camera Container */
+        /* LARGER CAMERA CONTAINER */
         #reader-wrapper { 
             position: relative; 
             width: 100%; 
-            max-width: 500px; 
-            height: 300px; /* Limits the "tall" camera problem */
+            max-width: 600px; 
+            height: 400px; /* Made taller for better visibility */
             border-radius: 12px; 
             overflow: hidden; 
             background: #000; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
         }
         #reader { width: 100%; height: 100%; }
         
-        /* Laser Guide */
+        /* Laser Guide - Scaled up */
         .laser {
-            position: absolute; top: 50%; left: 10%; width: 80%; height: 2px;
-            background: rgba(255, 0, 0, 0.7); box-shadow: 0 0 8px red;
+            position: absolute; top: 50%; left: 5%; width: 90%; height: 3px;
+            background: rgba(255, 0, 0, 0.8); box-shadow: 0 0 12px red;
             z-index: 10; pointer-events: none;
-            animation: scanning 2s infinite ease-in-out;
+            animation: scanning 2.5s infinite ease-in-out;
         }
-        @keyframes scanning { 0%, 100% { transform: translateY(-15px); } 50% { transform: translateY(15px); } }
+        @keyframes scanning { 0%, 100% { transform: translateY(-30px); } 50% { transform: translateY(30px); } }
 
-        .card { background: white; width: 100%; max-width: 500px; padding: 15px; border-radius: 12px; margin-top: 10px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); box-sizing: border-box; }
-        .status-pill { display: inline-block; padding: 6px 12px; border-radius: 9999px; font-size: 0.85rem; font-weight: 600; margin-bottom: 10px; transition: all 0.3s; }
+        .card { background: white; width: 100%; max-width: 600px; padding: 20px; border-radius: 15px; margin-top: 15px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); box-sizing: border-box; }
+        .status-pill { display: inline-block; padding: 8px 16px; border-radius: 9999px; font-size: 0.9rem; font-weight: 700; margin-bottom: 15px; }
         .syncing { background: #fef9c3; color: #854d0e; }
         .ready { background: #dcfce7; color: #166534; }
         
-        .control-group { margin-bottom: 15px; text-align: left; }
-        label { font-size: 0.85rem; font-weight: 600; color: #64748b; display: block; margin-bottom: 5px; }
-        select, input[type="range"] { width: 100%; }
+        .control-group { margin-bottom: 20px; text-align: left; }
+        label { font-size: 0.9rem; font-weight: 600; color: #64748b; display: block; margin-bottom: 8px; }
+        select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-size: 16px; }
         
-        input[type="text"] { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
-        button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 1rem; }
+        #zoom-container { background: #f1f5f9; padding: 10px; border-radius: 8px; }
+        input[type="range"] { width: 100%; height: 25px; cursor: pointer; }
         
-        .switch-box { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; font-weight: 500; color: #475569; }
+        input[type="text"] { width: 100%; padding: 14px; margin: 10px 0; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 1.1rem; }
+        .switch-box { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; font-weight: 600; color: #334155; }
     </style>
 </head>
 <body>
@@ -57,12 +59,12 @@
         <div id="status" class="status-pill syncing">Initializing...</div>
         
         <div class="control-group">
-            <label>📷 Select Camera (Try Different Lenses):</label>
+            <label>📷 Lens Selection:</label>
             <select id="cam-list" onchange="switchCamera(this.value)"></select>
         </div>
         
         <div id="zoom-container" class="control-group" style="display:none;">
-            <label>🔍 Zoom:</label>
+            <label>🔍 Zoom (Fixes Focus for Small Barcodes):</label>
             <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" oninput="applyZoom(this.value)">
         </div>
 
@@ -71,18 +73,18 @@
             <label for="cont-scan">Continuous Scan (Auto-Push)</label>
         </div>
 
-        <div id="manual-form" style="display: none; border-top: 1px solid #eee; padding-top: 10px;">
-            <p style="margin: 0; font-size: 0.8rem; color: #64748b;">Detected Serial:</p>
-            <strong id="display-serial" style="font-size: 1.2rem; color: var(--primary);">---</strong>
+        <div id="manual-form" style="display: none; border-top: 2px solid #f1f5f9; padding-top: 15px;">
+            <p style="margin: 0; font-size: 0.85rem; color: #64748b;">Detected Serial:</p>
+            <strong id="display-serial" style="font-size: 1.4rem; color: var(--primary); word-break: break-all;">---</strong>
             <input type="text" id="item-name" placeholder="Item Name (Optional)">
             <button onclick="manualPush()">Push to Sheet</button>
         </div>
         
-        <button id="torch-btn" style="display:none; margin-top:10px; background: #64748b;" onclick="toggleTorch()">Flashlight</button>
+        <button id="torch-btn" style="display:none; margin-top:10px; background: #475569;" onclick="toggleTorch()">Toggle Flashlight</button>
     </div>
 
     <script>
-        // REPLACE WITH YOUR GOOGLE APPS SCRIPT URL
+        // PASTE YOUR ACTUAL URL HERE
         const scriptURL = "https://script.google.com/macros/s/AKfycbzNSy4eQ5Tm3ZR429ozDAp7MekYHzQu5qEmLAFgYpqtUaxHGAIjMcEG5a4R9vqrrhKn/exec";
         
         let html5QrCode;
@@ -90,43 +92,39 @@
         let isLock = false;
         let isTorchOn = false;
 
-        const statusEl = document.getElementById('status');
-        const contSwitch = document.getElementById('cont-scan');
-        const manualForm = document.getElementById('manual-form');
-        const serialTxt = document.getElementById('display-serial');
-        const nameInput = document.getElementById('item-name');
-        const torchBtn = document.getElementById('torch-btn');
-
-        // 1. Initial Setup
         async function init() {
-            Html5Qrcode.getCameras().then(cameras => {
+            try {
+                const cameras = await Html5Qrcode.getCameras();
                 if (cameras && cameras.length) {
                     const camList = document.getElementById('cam-list');
-                    cameras.forEach((camera, index) => {
+                    // Reverse the list so the BACK camera usually shows up first
+                    cameras.reverse().forEach((camera, index) => {
                         const option = document.createElement('option');
                         option.value = camera.id;
                         option.text = camera.label || `Camera ${index + 1}`;
                         camList.appendChild(option);
                     });
-                    // Start with the last back camera (usually the higher-res one)
-                    startScanner(cameras[cameras.length - 1].id);
+                    // Force start with the first "back" camera found
+                    startScanner(cameras[0].id);
                 }
-            }).catch(err => { statusEl.innerText = "Camera Permission Denied."; });
+            } catch (err) {
+                statusEl.innerText = "Camera Permission Denied.";
+            }
             loadCache();
         }
 
-        // 2. Advanced Scanner Config
         async function startScanner(cameraId) {
             if (html5QrCode) { await html5QrCode.stop(); }
             html5QrCode = new Html5Qrcode("reader");
 
             const config = { 
                 fps: 25, 
-                qrbox: { width: 280, height: 120 },
+                // BIGGER SCANNING AREA (width x height)
+                qrbox: { width: 350, height: 180 }, 
                 aspectRatio: 1.0, 
                 videoConstraints: { 
                     deviceId: { exact: cameraId },
-                    width: { ideal: 4096 }, // Try to get 108MP sensor data
+                    width: { ideal: 4096 }, 
                     height: { ideal: 2160 } 
                 }
             };
@@ -140,7 +138,7 @@
         async function checkCapabilities() {
             const track = html5QrCode.getRunningTrack();
             const capabilities = track.getCapabilities();
-            if (capabilities.torch) torchBtn.style.display = "block";
+            if (capabilities.torch) document.getElementById('torch-btn').style.display = "block";
             if (capabilities.zoom) {
                 const slider = document.getElementById('zoom-slider');
                 slider.min = capabilities.zoom.min;
@@ -150,52 +148,42 @@
             }
         }
 
-        function applyZoom(val) {
-            const track = html5QrCode.getRunningTrack();
-            track.applyConstraints({ advanced: [{ zoom: val }] });
-        }
-
-        function switchCamera(val) { startScanner(val); }
-
-        // 3. Scan Handler with Auto-Reset Logic
         function onScanSuccess(decodedText) {
             if (isLock) return;
             if (cache.has(decodedText)) {
-                statusEl.innerText = `Cached: ${decodedText}`;
+                statusEl.innerText = `Duplicate: ${decodedText}`;
                 return;
             }
 
-            if (contSwitch.checked) {
+            if (document.getElementById('cont-scan').checked) {
                 autoPush(decodedText);
-            } else {
-                // If a NEW code is found, update the form and clear the name
-                if (decodedText !== serialTxt.innerText) {
-                    statusEl.innerText = "New code detected";
-                    serialTxt.innerText = decodedText;
-                    nameInput.value = ""; 
-                    manualForm.style.display = "block";
-                    if (navigator.vibrate) navigator.vibrate(50);
-                }
+            } else if (decodedText !== document.getElementById('display-serial').innerText) {
+                statusEl.innerText = "Code Captured!";
+                document.getElementById('display-serial').innerText = decodedText;
+                document.getElementById('item-name').value = ""; 
+                document.getElementById('manual-form').style.display = "block";
+                if (navigator.vibrate) navigator.vibrate(70);
             }
         }
 
-        async function autoPush(serial) {
-            isLock = true;
-            statusEl.innerText = `Auto-Pushing: ${serial}...`;
-            await sendData("", serial);
-            setTimeout(() => { isLock = false; }, 2500);
+        // --- Core Functions ---
+        function applyZoom(val) {
+            html5QrCode.getRunningTrack().applyConstraints({ advanced: [{ zoom: val }] });
         }
-
-        async function manualPush() {
-            isLock = true;
-            statusEl.innerText = "Pushing...";
-            await sendData(nameInput.value, serialTxt.innerText);
-            manualForm.style.display = "none";
-            nameInput.value = "";
-            serialTxt.innerText = "---";
-            isLock = false;
+        function switchCamera(val) { startScanner(val); }
+        async function toggleTorch() {
+            isTorchOn = !isTorchOn;
+            await html5QrCode.applyVideoConstraints({ advanced: [{ torch: isTorchOn }] });
         }
-
+        async function loadCache() {
+            try {
+                const res = await fetch(`${scriptURL}?action=fetch`);
+                const data = await res.json();
+                data.serials.forEach(s => cache.add(String(s)));
+                document.getElementById('status').innerText = `Ready: ${cache.size} cached`;
+                document.getElementById('status').className = "status-pill ready";
+            } catch (e) { document.getElementById('status').innerText = "Sync Error."; }
+        }
         async function sendData(name, serial) {
             const query = `?action=push&name=${encodeURIComponent(name)}&serial=${encodeURIComponent(serial)}`;
             try {
@@ -203,24 +191,23 @@
                 const result = await res.json();
                 if (result.status === "success") {
                     cache.add(serial);
-                    statusEl.innerText = `Added: ${serial}`;
+                    document.getElementById('status').innerText = `Successfully Added!`;
                 }
-            } catch (e) { statusEl.innerText = "Push Error."; }
+            } catch (e) { document.getElementById('status').innerText = "Push Error."; }
         }
-
-        async function loadCache() {
-            try {
-                const res = await fetch(`${scriptURL}?action=fetch`);
-                const data = await res.json();
-                data.serials.forEach(s => cache.add(String(s)));
-                statusEl.innerText = `Ready: ${cache.size} cached`;
-                statusEl.className = "status-pill ready";
-            } catch (e) { statusEl.innerText = "Sync Failed."; }
+        async function autoPush(serial) {
+            isLock = true;
+            document.getElementById('status').innerText = `Auto-Pushing...`;
+            await sendData("", serial);
+            setTimeout(() => { isLock = false; }, 2500);
         }
-
-        async function toggleTorch() {
-            isTorchOn = !isTorchOn;
-            await html5QrCode.applyVideoConstraints({ advanced: [{ torch: isTorchOn }] });
+        async function manualPush() {
+            isLock = true;
+            await sendData(document.getElementById('item-name').value, document.getElementById('display-serial').innerText);
+            document.getElementById('manual-form').style.display = "none";
+            document.getElementById('item-name').value = "";
+            document.getElementById('display-serial').innerText = "---";
+            isLock = false;
         }
 
         window.addEventListener('DOMContentLoaded', init);
