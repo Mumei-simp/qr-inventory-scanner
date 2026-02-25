@@ -3,27 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart QR Inventory</title>
+    <title>Advanced Pro Scanner</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         :root { --primary: #2563eb; --bg: #f8fafc; }
-        body { font-family: system-ui, sans-serif; background: var(--bg); padding: 20px; display: flex; flex-direction: column; align-items: center; }
-        #reader { width: 100%; max-width: 500px; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
-        .card { background: white; width: 100%; max-width: 500px; padding: 20px; border-radius: 12px; margin-top: 20px; box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1); }
-        .status-pill { display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 0.875rem; font-weight: 500; margin-bottom: 10px; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); padding: 15px; display: flex; flex-direction: column; align-items: center; margin: 0; }
+        
+        /* Scanner Container */
+        #reader-wrapper { position: relative; width: 100%; max-width: 500px; border-radius: 12px; overflow: hidden; background: #000; }
+        #reader { width: 100%; }
+        
+        /* Laser Guide Line */
+        .laser {
+            position: absolute; top: 50%; left: 10%; width: 80%; height: 2px;
+            background: rgba(255, 0, 0, 0.7); box-shadow: 0 0 8px red;
+            z-index: 10; pointer-events: none;
+            animation: scanning 2s infinite ease-in-out;
+        }
+        @keyframes scanning { 0%, 100% { transform: translateY(-20px); } 50% { transform: translateY(20px); } }
+
+        .card { background: white; width: 100%; max-width: 500px; padding: 20px; border-radius: 12px; margin-top: 15px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); box-sizing: border-box; }
+        .status-pill { display: inline-block; padding: 6px 12px; border-radius: 9999px; font-size: 0.85rem; font-weight: 600; margin-bottom: 15px; }
         .syncing { background: #fef9c3; color: #854d0e; }
         .ready { background: #dcfce7; color: #166534; }
-        input[type="text"] { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #e2e8f0; border-radius: 6px; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; }
-        .switch-box { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; font-size: 0.9rem; color: #475569; }
+        
+        input[type="text"] { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 1rem; }
+        .switch-box { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; font-weight: 500; color: #475569; }
+        #torch-btn { margin-top: 10px; background: #64748b; font-size: 0.8rem; padding: 8px; }
     </style>
 </head>
 <body>
 
-    <div id="reader"></div>
+    <div id="reader-wrapper">
+        <div id="reader"></div>
+        <div class="laser"></div>
+    </div>
 
     <div class="card">
-        <div id="status" class="status-pill syncing">Initializing...</div>
+        <div id="status" class="status-pill syncing">Initializing Camera...</div>
         
         <div class="switch-box">
             <input type="checkbox" id="cont-scan">
@@ -32,40 +50,76 @@
 
         <div id="manual-form" style="display: none;">
             <p style="margin: 0; font-size: 0.8rem; color: #64748b;">Detected Serial:</p>
-            <strong id="display-serial">---</strong>
+            <strong id="display-serial" style="font-size: 1.2rem; color: var(--primary);">---</strong>
             <input type="text" id="item-name" placeholder="Item Name (Optional)">
             <button onclick="manualPush()">Push to Sheet</button>
         </div>
+        
+        <button id="torch-btn" style="display:none;" onclick="toggleTorch()">Toggle Flashlight</button>
     </div>
 
     <script>
-        // REPLACE WITH YOUR URL
-        const scriptURL = "https://script.google.com/macros/s/AKfycbzNSy4eQ5Tm3ZR429ozDAp7MekYHzQu5qEmLAFgYpqtUaxHGAIjMcEG5a4R9vqrrhKn/exec";
-        
-        let cache = new Set();
+        // 1. CONFIGURATION
+        const scriptURL = "https://script.google.com/macros/s/YOUR_ACTUAL_ID_HERE/exec";
+        const cache = new Set();
         let isLock = false;
+        let html5QrCode;
+        let isTorchOn = false;
 
         const statusEl = document.getElementById('status');
         const contSwitch = document.getElementById('cont-scan');
         const manualForm = document.getElementById('manual-form');
         const serialTxt = document.getElementById('display-serial');
         const nameInput = document.getElementById('item-name');
+        const torchBtn = document.getElementById('torch-btn');
 
-        // 1. Fetch Cache
+        // 2. INITIALIZE ADVANCED SCANNER
+        async function startScanner() {
+            html5QrCode = new Html5Qrcode("reader");
+            
+            const config = { 
+                fps: 20, 
+                qrbox: { width: 300, height: 150 },
+                aspectRatio: 1.777778, // 16:9
+                videoConstraints: {
+                    facingMode: "environment",
+                    focusMode: "continuous",
+                    whiteBalanceMode: "continuous"
+                }
+            };
+
+            try {
+                await html5QrCode.start(
+                    { facingMode: "environment" }, 
+                    config, 
+                    onScanSuccess
+                );
+                
+                // Show torch button if hardware supports it
+                const capabilities = html5QrCode.getRunningTrackCapabilities();
+                if (capabilities.torch) torchBtn.style.display = "block";
+                
+                loadCache();
+            } catch (err) {
+                statusEl.innerText = "Camera Error. Check Permissions.";
+                console.error(err);
+            }
+        }
+
+        // 3. FETCH CACHE
         async function loadCache() {
             try {
                 const res = await fetch(`${scriptURL}?action=fetch`);
                 const data = await res.json();
                 data.serials.forEach(s => cache.add(String(s)));
-                statusEl.innerText = `Ready: ${cache.size} items cached`;
+                statusEl.innerText = `Ready: ${cache.size} items in Sheet`;
                 statusEl.className = "status-pill ready";
             } catch (e) {
-                statusEl.innerText = "Sync Failed";
-                console.error(e);
+                statusEl.innerText = "Sync Failed (CORS or URL error)";
             }
         }
 
-        // 2. Scan Trigger
+        // 4. SCAN HANDLER
         function onScanSuccess(decodedText) {
             if (isLock) return;
             if (cache.has(decodedText)) {
@@ -80,34 +134,26 @@
             }
         }
 
-        // 3. Auto Mode
         async function autoPush(serial) {
             isLock = true;
             statusEl.innerText = `Auto-Pushing: ${serial}...`;
             await sendData("", serial);
-            setTimeout(() => { isLock = false; }, 2000); // 2 sec cooldown
+            setTimeout(() => { isLock = false; }, 2500); // Wait 2.5s for next scan
         }
 
-        // 4. Manual Mode
         function showManual(serial) {
-            isLock = true; // Stop scanner from overwriting current find
+            isLock = true;
             serialTxt.innerText = serial;
             manualForm.style.display = "block";
         }
 
         async function manualPush() {
-            const serial = serialTxt.innerText;
-            const name = nameInput.value;
-            statusEl.innerText = "Pushing...";
-            await sendData(name, serial);
-            
-            // Reset
+            await sendData(nameInput.value, serialTxt.innerText);
             manualForm.style.display = "none";
             nameInput.value = "";
             isLock = false;
         }
 
-        // 5. Unified Sender
         async function sendData(name, serial) {
             const query = `?action=push&name=${encodeURIComponent(name)}&serial=${encodeURIComponent(serial)}`;
             try {
@@ -115,17 +161,22 @@
                 const result = await res.json();
                 if (result.status === "success") {
                     cache.add(serial);
-                    statusEl.innerText = `Success! Added ${serial}`;
+                    statusEl.innerText = `Successfully Added!`;
                 }
             } catch (e) {
-                statusEl.innerText = "Error Pushing Data";
+                statusEl.innerText = "Push Failed. Check Connection.";
             }
         }
 
-        const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 });
-        scanner.render(onScanSuccess);
-        loadCache();
+        async function toggleTorch() {
+            isTorchOn = !isTorchOn;
+            await html5QrCode.applyVideoConstraints({
+                advanced: [{ torch: isTorchOn }]
+            });
+        }
+
+        // Run on load
+        window.addEventListener('DOMContentLoaded', startScanner);
     </script>
 </body>
 </html>
-
