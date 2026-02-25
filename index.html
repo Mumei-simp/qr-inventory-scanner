@@ -3,43 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Precision Scanner Pro</title>
+    <title>Pro Inventory Scanner</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        :root { --primary: #2563eb; --bg: #0f172a; --error: #ef4444; }
+        :root { --primary: #2563eb; --bg: #0f172a; --error: #dc2626; --success: #16a34a; }
         body { font-family: system-ui, sans-serif; background: var(--bg); color: white; padding: 15px; display: flex; flex-direction: column; align-items: center; margin: 0; }
         
-        #reader video {
-            filter: contrast(1.5) brightness(1.1) grayscale(0.3);
-            object-fit: cover !important;
-        }
+        /* Engine Processing Visuals */
+        #reader video { filter: contrast(1.6) brightness(1.1) grayscale(0.5); object-fit: cover !important; }
 
         #reader-wrapper { 
             position: relative; width: 100%; max-width: 500px; 
-            border-radius: 16px; overflow: hidden; border: 2px solid #334155;
-            background: #000; 
+            border-radius: 12px; overflow: hidden; border: 2px solid #334155;
         }
         
         .laser {
             position: absolute; top: 50%; left: 5%; width: 90%; height: 2px;
-            background: #22c55e; box-shadow: 0 0 12px #22c55e;
-            z-index: 10; pointer-events: none;
-            animation: scanning 2s infinite ease-in-out;
+            background: #ff003c; box-shadow: 0 0 12px #ff003c;
+            z-index: 10; pointer-events: none; animation: scanning 2s infinite ease-in-out;
         }
-        @keyframes scanning { 0%, 100% { transform: translateY(-45px); } 50% { transform: translateY(45px); } }
+        @keyframes scanning { 0%, 100% { transform: translateY(-40px); } 50% { transform: translateY(40px); } }
 
-        .card { background: #1e293b; width: 100%; max-width: 500px; padding: 20px; border-radius: 16px; margin-top: 15px; box-sizing: border-box; border: 1px solid #334155; }
-        .status-pill { display: inline-block; padding: 8px 16px; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; margin-bottom: 15px; text-transform: uppercase; transition: all 0.2s; }
-        .syncing { background: #475569; color: #cbd5e1; }
-        .ready { background: #059669; color: #ecfdf5; }
-        .warning { background: var(--error); color: white; }
+        .card { background: #1e293b; width: 100%; max-width: 500px; padding: 20px; border-radius: 12px; margin-top: 15px; box-sizing: border-box; }
         
-        input[type="text"] { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 16px; margin-bottom: 10px; }
-        button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+        .status-pill { display: block; text-align: center; padding: 10px; border-radius: 8px; font-size: 0.8rem; font-weight: 800; margin-bottom: 15px; text-transform: uppercase; }
+        .syncing { background: #334155; color: #94a3b8; }
+        .ready { background: var(--success); color: white; }
+        .is-dup { background: var(--error); color: white; border: 2px solid white; }
         
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
-        #torch-btn { background: #4b5563; }
-        .zoom-label { font-size: 0.75rem; color: #94a3b8; text-align: center; margin-bottom: 10px; display: block; }
+        input[type="text"] { width: 100%; padding: 14px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 16px; margin: 10px 0; }
+        button { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; }
+        
+        .opt-row { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; font-size: 0.9rem; }
     </style>
 </head>
 <body>
@@ -50,24 +45,25 @@
     </div>
 
     <div class="card">
-        <span class="zoom-label">3.0x Ultra-Zoom Active — Stay Back 10-15cm</span>
-        <div id="status" class="status-pill syncing">Initializing...</div>
+        <div id="status" class="status-pill syncing">FETCHING DATABASE...</div>
         
-        <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+        <div class="opt-row">
             <input type="checkbox" id="cont-scan">
-            <label for="cont-scan" style="font-size: 0.9rem;">Auto-Push to Sheet</label>
+            <label for="cont-scan">Auto-Push (No Prompts)</label>
         </div>
 
         <div id="manual-form" style="display: none; border-top: 1px solid #334155; padding-top: 15px;">
-            <span style="font-size: 0.7rem; color: #94a3b8;">SCANNED SERIAL:</span>
-            <strong id="display-serial" style="font-size: 1.2rem; color: #60a5fa; display: block; margin-bottom: 10px;">---</strong>
-            <input type="text" id="item-name" placeholder="Item Name (Optional)">
-            <button onclick="manualPush()">Push to Database</button>
+            <div style="margin-bottom: 10px;">
+                <span style="color: #94a3b8; font-size: 0.7rem;">CURRENT FOCUS:</span>
+                <div id="display-serial" style="font-size: 1.4rem; font-weight: 800; color: #60a5fa;">---</div>
+            </div>
+            <input type="text" id="item-name" placeholder="Enter Item Name...">
+            <button onclick="manualPush()">PUSH TO SHEET</button>
         </div>
         
-        <div class="controls">
-            <button id="torch-btn" style="display:none;" onclick="toggleTorch()">🔦 Flashlight</button>
-            <button style="background: #334155;" onclick="location.reload()">🔄 Refresh Cache</button>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+            <button id="torch-btn" style="display:none; background: #475569;" onclick="toggleTorch()">🔦 LIGHT</button>
+            <button style="background: #475569;" onclick="location.reload()">🔄 REFRESH</button>
         </div>
     </div>
 
@@ -85,11 +81,26 @@
         const nameInput = document.getElementById('item-name');
         const torchBtn = document.getElementById('torch-btn');
 
-        async function startScanner() {
+        async function init() {
             html5QrCode = new Html5Qrcode("reader");
+            
+            // 1. Fetch the "Fucking Duplicates" list first
+            try {
+                const res = await fetch(`${scriptURL}?action=fetch`);
+                const data = await res.json();
+                if(data.serials) {
+                    data.serials.forEach(s => cache.add(String(s).trim()));
+                }
+                statusEl.innerText = `${cache.size} ITEMS LOADED. READY.`;
+                statusEl.className = "status-pill ready";
+            } catch (e) {
+                statusEl.innerText = "FETCH FAILED. DUPE CHECK DISABLED.";
+            }
+
+            // 2. Start Camera with High-Def + Zoom
             const config = { 
                 fps: 30, 
-                qrbox: { width: 300, height: 160 },
+                qrbox: { width: 320, height: 180 },
                 videoConstraints: {
                     facingMode: "environment",
                     width: { ideal: 1920 },
@@ -101,67 +112,56 @@
                 await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
                 const track = html5QrCode.getRunningTrack();
                 const caps = track.getCapabilities();
+                
+                // Force 3.0x Zoom for small barcodes
                 if (caps.zoom) {
-                    const targetZoom = Math.min(3.0, caps.zoom.max);
-                    await track.applyConstraints({ advanced: [{ zoom: targetZoom }] });
+                    await track.applyConstraints({ advanced: [{ zoom: Math.min(3.0, caps.zoom.max) }] });
                 }
                 if (caps.torch) torchBtn.style.display = "block";
-                loadCache();
             } catch (err) {
-                statusEl.innerText = "Camera Error";
-            }
-        }
-
-        // FETCHING EXISTING DATA FROM BACKEND
-        async function loadCache() {
-            try {
-                const res = await fetch(`${scriptURL}?action=fetch`);
-                const data = await res.json();
-                data.serials.forEach(s => cache.add(String(s)));
-                statusEl.innerText = `READY: ${cache.size} ENTRIES`;
-                statusEl.className = "status-pill ready";
-            } catch (e) {
-                statusEl.innerText = "OFFLINE - CACHE EMPTY";
-                statusEl.className = "status-pill warning";
+                statusEl.innerText = "CAMERA ERROR";
             }
         }
 
         function onScanSuccess(decodedText) {
+            const cleanCode = decodedText.trim();
             if (isLock) return;
 
-            // 1. DUPLICATE CHECK (Against fetched database)
-            if (cache.has(decodedText)) {
-                statusEl.innerText = "DUPLICATE IGNORED";
-                statusEl.className = "status-pill warning";
+            // 1. HIT THE DUPE LIST
+            if (cache.has(cleanCode)) {
+                statusEl.innerText = `DUPLICATE: ${cleanCode}`;
+                statusEl.className = "status-pill is-dup";
+                if (navigator.vibrate) navigator.vibrate(200);
                 return; 
             }
 
-            // 2. AUTO-RESET / FOCUS LOGIC
-            // If it's a new code (different from what's currently being handled)
-            if (decodedText !== serialTxt.innerText) {
-                if (navigator.vibrate) navigator.vibrate([50, 30]); 
-                
-                statusEl.innerText = "NEW CODE DETECTED";
+            // 2. AUTO-RESET / OVERWRITE LOGIC
+            // If it's a new valid code, replace whatever is currently in the form
+            if (cleanCode !== serialTxt.innerText) {
+                statusEl.innerText = "NEW CODE CAPTURED";
                 statusEl.className = "status-pill ready";
                 
-                serialTxt.innerText = decodedText;
-                nameInput.value = ""; // Clear name field for new item
+                serialTxt.innerText = cleanCode;
+                nameInput.value = ""; 
                 manualForm.style.display = "block";
 
+                if (navigator.vibrate) navigator.vibrate([50, 50]);
+
                 if (contSwitch.checked) {
-                    autoPush(decodedText);
+                    autoPush(cleanCode);
                 }
             }
         }
 
         async function autoPush(serial) {
             isLock = true;
-            statusEl.innerText = "PUSHING...";
+            statusEl.innerText = "AUTO-PUSHING...";
             await sendData("", serial);
-            setTimeout(() => { isLock = false; }, 1200); 
+            setTimeout(() => { isLock = false; }, 1000); 
         }
 
         async function manualPush() {
+            if(serialTxt.innerText === "---") return;
             isLock = true;
             statusEl.innerText = "SENDING...";
             await sendData(nameInput.value, serialTxt.innerText);
@@ -177,13 +177,11 @@
                 const res = await fetch(scriptURL + query);
                 const result = await res.json();
                 if (result.status === "success") {
-                    cache.add(serial); // Add to local duplicate check immediately
-                    statusEl.innerText = `SAVED: ${serial}`;
-                    statusEl.className = "status-pill ready";
+                    cache.add(serial); // Update local list so it can't be scanned again
+                    statusEl.innerText = "PUSH SUCCESSFUL";
                 }
             } catch (e) {
-                statusEl.innerText = "SYNC FAILED";
-                statusEl.className = "status-pill warning";
+                statusEl.innerText = "CONNECTION ERROR";
             }
         }
 
@@ -193,7 +191,7 @@
             await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
         }
 
-        window.addEventListener('DOMContentLoaded', startScanner);
+        window.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html>
