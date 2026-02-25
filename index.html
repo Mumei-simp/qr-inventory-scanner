@@ -20,7 +20,6 @@
       --radius:12px;
     }
 
-    /* Page */
     html,body{height:100%}
     body{
       margin:0;
@@ -91,6 +90,7 @@
     .syncing{background:#0b1220;color:var(--muted);border:1px solid var(--border)}
     .ready{background:var(--success);color:#fff}
     .is-dup{background:var(--danger);color:#fff}
+    .pending{background:#334155;color:var(--muted)}
 
     /* Zoom row */
     .zoom-row{
@@ -168,6 +168,7 @@
     }
     .btn-primary{background:var(--primary);color:#fff}
     .btn-muted{background:var(--control);color:#fff}
+    .btn-disabled{background:#2b3946;color:#94a3b8;cursor:not-allowed}
     .bottom-btns{
       display:grid;
       grid-template-columns:1fr 1fr;
@@ -176,7 +177,9 @@
     }
     #torch-btn{display:none}
 
-    /* Responsive tweaks */
+    /* Small helper text */
+    .helper { font-size:0.85rem; color:var(--muted); margin-top:6px; }
+
     @media (max-width:420px){
       #reader-wrapper{aspect-ratio:4/3}
       .card{padding:12px}
@@ -210,7 +213,11 @@
     <div id="manual-form">
       <div id="display-serial">---</div>
       <input id="item-name" type="text" placeholder="Item Name (Optional)" aria-label="Item name">
-      <button class="btn btn-primary" onclick="manualPush()">PUSH DATA</button>
+      <div style="display:flex;gap:10px;">
+        <button id="push-btn" class="btn btn-primary" onclick="manualPush()">PUSH DATA</button>
+        <button id="cancel-btn" class="btn btn-muted" onclick="clearSerial()">CANCEL</button>
+      </div>
+      <div id="helper-text" class="helper"></div>
     </div>
 
     <div class="bottom-btns" style="margin-top:12px">
@@ -222,6 +229,7 @@
   <script>
     const scriptURL = "https://script.google.com/macros/s/AKfycbzNSy4eQ5Tm3ZR429ozDAp7MekYHzQu5qEmLAFgYpqtUaxHGAIjMcEG5a4R9vqrrhKn/exec";
     const cache = new Set();
+    const pending = new Set(); // serials currently being pushed
     let isLock = false;
     let html5QrCode;
     let isTorchOn = false;
@@ -235,7 +243,56 @@
     const zoomDial = document.getElementById('zoom-dial');
     const zoomValue = document.getElementById('zoom-value');
     const zoomContainer = document.getElementById('zoom-container');
+    const pushBtn = document.getElementById('push-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const helperText = document.getElementById('helper-text');
 
+    // Debounce / scan suppression
+    let lastScanAt = 0;
+    let lastScanCode = null;
+    const SCAN_DEBOUNCE_MS = 900;
+
+    // Normalize scanned codes to canonical form
+    function normalizeCode(raw) {
+      if (!raw && raw !== "") return "";
+      // Trim, remove control/zero-width chars, collapse whitespace, uppercase
+      let s = String(raw).trim();
+      // remove zero-width and non-printable
+      s = s.replace(/[\u200B-\u200D\uFEFF]/g, "");
+      s = s.replace(/[\x00-\x1F\x7F]/g, "");
+      // collapse internal whitespace
+      s = s.replace(/\s+/g, "");
+      return s.toUpperCase();
+    }
+
+    // Helper to update push button state based on current serial
+    function updatePushButtonState(serial) {
+      const norm = normalizeCode(serial);
+      if (!norm || norm === '---') {
+        pushBtn.className = 'btn btn-primary btn-disabled';
+        pushBtn.disabled = true;
+        helperText.innerText = '';
+        return;
+      }
+      if (pending.has(norm)) {
+        pushBtn.className = 'btn btn-disabled';
+        pushBtn.disabled = true;
+        helperText.innerText = 'Push pending...';
+        return;
+      }
+      if (cache.has(norm)) {
+        pushBtn.className = 'btn btn-disabled';
+        pushBtn.disabled = true;
+        helperText.innerText = 'Duplicate detected — push disabled';
+        return;
+      }
+      // otherwise enable
+      pushBtn.className = 'btn btn-primary';
+      pushBtn.disabled = false;
+      helperText.innerText = '';
+    }
+
+    // Helper to get active video track reliably
     async function getActiveVideoTrack(retries = 6, delayMs = 300) {
       try {
         if (html5QrCode && typeof html5QrCode.getRunningTrack === 'function') {
@@ -260,10 +317,11 @@
     async function init() {
       html5QrCode = new Html5Qrcode("reader");
 
+      // 1. Fetch Duplicates (initial)
       try {
         const res = await fetch(`${scriptURL}?action=fetch`);
         const data = await res.json();
-        if (data.serials) data.serials.forEach(s => cache.add(String(s).trim()));
+        if (data.serials) data.serials.forEach(s => cache.add(String(s).trim().toUpperCase()));
         statusEl.innerText = `${cache.size} ITEMS LOADED`;
         statusEl.className = "status-pill ready";
       } catch (e) {
@@ -272,6 +330,7 @@
         statusEl.className = "status-pill syncing";
       }
 
+      // 2. Start Camera
       const config = {
         fps: 30,
         qrbox: { width: 280, height: 160 },
@@ -327,62 +386,144 @@
       } catch (e) { console.error("Zoom failed", e); }
     }
 
+    // Debounced scan handler
     function onScanSuccess(decodedText) {
-      const cleanCode = decodedText.trim();
-      if (cache.has(cleanCode)) {
-        statusEl.innerText = `DUPLICATE: ${cleanCode}`;
+      const now = Date.now();
+      const raw = String(decodedText || "");
+      const norm = normalizeCode(raw);
+
+      // Basic debounce: ignore same code scanned repeatedly within SCAN_DEBOUNCE_MS
+      if (norm && norm === lastScanCode && (now - lastScanAt) < SCAN_DEBOUNCE_MS) {
+        return;
+      }
+      lastScanAt = now;
+      lastScanCode = norm;
+
+      // Update UI and manual form
+      if (!norm) return;
+      serialTxt.innerText = norm;
+      manualForm.style.display = "block";
+      nameInput.value = "";
+
+      // Duplicate check
+      if (cache.has(norm)) {
+        statusEl.innerText = `DUPLICATE: ${norm}`;
         statusEl.className = "status-pill is-dup";
-        serialTxt.innerText = cleanCode;
-        manualForm.style.display = "block";
+        updatePushButtonState(norm);
+        if (navigator.vibrate) navigator.vibrate([30]);
         return;
       }
 
-      if (cleanCode !== serialTxt.innerText) {
-        statusEl.innerText = "CODE CAPTURED";
-        statusEl.className = "status-pill ready";
-        serialTxt.innerText = cleanCode;
-        nameInput.value = "";
-        manualForm.style.display = "block";
-        if (navigator.vibrate) navigator.vibrate([40, 40]);
-        if (contSwitch.checked && !isLock) autoPush(cleanCode);
+      // Not in cache
+      statusEl.innerText = "CODE CAPTURED";
+      statusEl.className = "status-pill ready";
+      updatePushButtonState(norm);
+      if (navigator.vibrate) navigator.vibrate([40, 40]);
+
+      // Auto-push behavior: optimistic add then send
+      if (contSwitch.checked && !isLock) {
+        // Start auto push with optimistic add
+        startPush(norm, "");
       }
     }
 
-    async function autoPush(serial) {
+    // Start push with optimistic add; returns a promise
+    async function startPush(serialRaw, name) {
+      const serial = normalizeCode(serialRaw);
+      if (!serial) return;
+
+      // If already in cache or pending, do nothing
+      if (cache.has(serial) || pending.has(serial)) {
+        updatePushButtonState(serial);
+        return;
+      }
+
+      // Optimistic add: mark pending and add to cache immediately
+      pending.add(serial);
+      cache.add(serial);
+      updatePushButtonState(serial);
+      statusEl.innerText = "PENDING SEND...";
+      statusEl.className = "status-pill pending";
+
+      // Keep isLock behavior for concurrent pushes
       isLock = true;
-      statusEl.innerText = "AUTO-SENDING...";
-      await sendData("", serial);
-      setTimeout(() => { isLock = false; }, 1200);
+
+      try {
+        const success = await sendData(name, serial);
+        if (success) {
+          // push succeeded; pending cleared
+          pending.delete(serial);
+          statusEl.innerText = "SUCCESSFULLY PUSHED";
+          statusEl.className = "status-pill ready";
+        } else {
+          // server returned non-success: rollback optimistic add
+          pending.delete(serial);
+          cache.delete(serial);
+          statusEl.innerText = "PUSH FAILED";
+          statusEl.className = "status-pill is-dup";
+        }
+      } catch (e) {
+        // network or unexpected error: rollback optimistic add
+        pending.delete(serial);
+        cache.delete(serial);
+        statusEl.innerText = "CONNECTION FAILED";
+        statusEl.className = "status-pill is-dup";
+      } finally {
+        // release lock after short delay to allow continuous scanning
+        setTimeout(() => { isLock = false; }, 800);
+        updatePushButtonState(serial);
+        // clear manual form serial if it matches
+        if (serialTxt.innerText === serial) {
+          // keep serial visible briefly; operator can clear manually
+        }
+      }
     }
 
+    // Manual push triggered by button
     async function manualPush() {
-      isLock = true;
-      statusEl.innerText = "SENDING...";
-      await sendData(nameInput.value, serialTxt.innerText);
-      manualForm.style.display = "none";
-      serialTxt.innerText = "---";
-      isLock = false;
+      const raw = serialTxt.innerText || "";
+      const serial = normalizeCode(raw);
+      if (!serial) return;
+      // If duplicate or pending, do nothing
+      if (cache.has(serial) && !pending.has(serial)) {
+        updatePushButtonState(serial);
+        return;
+      }
+      // Use optimistic push flow
+      await startPush(serial, nameInput.value || "");
+      // hide manual form on success or failure? keep behavior: hide on success
+      if (!pending.has(serial) && cache.has(serial)) {
+        // assume success or at least recorded locally
+        manualForm.style.display = "none";
+        serialTxt.innerText = "---";
+      }
     }
 
+    // sendData returns true on success, false on non-success
     async function sendData(name, serial) {
       const query = `?action=push&name=${encodeURIComponent(name)}&serial=${encodeURIComponent(serial)}`;
       try {
         const res = await fetch(scriptURL + query);
         const result = await res.json();
-        if (result.status === "success") {
-          cache.add(serial);
-          statusEl.innerText = "SUCCESSFULLY PUSHED";
-          statusEl.className = "status-pill ready";
+        if (result && result.status === "success") {
+          // server accepted; ensure cache contains serial (already added optimistically)
+          return true;
         } else {
           console.warn('Push returned non-success', result);
-          statusEl.innerText = "PUSH FAILED";
-          statusEl.className = "status-pill is-dup";
+          return false;
         }
       } catch (e) {
         console.error('Connection failed', e);
-        statusEl.innerText = "CONNECTION FAILED";
-        statusEl.className = "status-pill is-dup";
+        throw e;
       }
+    }
+
+    // Cancel / clear current serial in manual form
+    function clearSerial() {
+      manualForm.style.display = "none";
+      serialTxt.innerText = "---";
+      nameInput.value = "";
+      helperText.innerText = '';
     }
 
     async function toggleTorch() {
@@ -401,7 +542,8 @@
         const res = await fetch(`${scriptURL}?action=fetch`);
         const data = await res.json();
         cache.clear();
-        if (data.serials) data.serials.forEach(s => cache.add(String(s).trim()));
+        pending.clear();
+        if (data.serials) data.serials.forEach(s => cache.add(String(s).trim().toUpperCase()));
         statusEl.innerText = `${cache.size} ITEMS LOADED`;
         statusEl.className = "status-pill ready";
       } catch (e) {
@@ -417,6 +559,9 @@
       } catch (e) { console.error('Restart scanner failed', e); }
     }
 
+    // Keep push button state in sync when user types a name or when serial changes
+    nameInput.addEventListener('input', () => updatePushButtonState(serialTxt.innerText));
+    // Initialize
     window.addEventListener('DOMContentLoaded', init);
   </script>
 </body>
