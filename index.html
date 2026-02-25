@@ -120,38 +120,52 @@
         }
 
         // 4. SCAN HANDLER
+                // 3. SCAN HANDLER
         function onScanSuccess(decodedText) {
+            // 1. If we are currently in the middle of a network request (pushing), stay locked
             if (isLock) return;
+
+            // 2. Check if this code is already in the Google Sheet (Cache)
             if (cache.has(decodedText)) {
                 statusEl.innerText = `Duplicate: ${decodedText}`;
                 return;
             }
 
+            // 3. If Continuous Mode is ON
             if (contSwitch.checked) {
                 autoPush(decodedText);
-            } else {
-                showManual(decodedText);
+            } 
+            // 4. If Manual Mode is ON
+            else {
+                // If the new scan is DIFFERENT from the one currently displayed
+                if (decodedText !== serialTxt.innerText) {
+                    statusEl.innerText = "New code detected - Updating form";
+                    serialTxt.innerText = decodedText;
+                    nameInput.value = ""; // Clear the old name
+                    manualForm.style.display = "block";
+                }
             }
         }
 
         async function autoPush(serial) {
-            isLock = true;
+            isLock = true; // Temporary lock for network request
             statusEl.innerText = `Auto-Pushing: ${serial}...`;
             await sendData("", serial);
-            setTimeout(() => { isLock = false; }, 2500); // Wait 2.5s for next scan
-        }
-
-        function showManual(serial) {
-            isLock = true;
-            serialTxt.innerText = serial;
-            manualForm.style.display = "block";
+            
+            // Short cooldown so it doesn't scan the same item twice instantly
+            setTimeout(() => { isLock = false; }, 2000); 
         }
 
         async function manualPush() {
+            isLock = true; // Lock while pushing
+            statusEl.innerText = "Pushing...";
             await sendData(nameInput.value, serialTxt.innerText);
+            
+            // Reset UI after success
             manualForm.style.display = "none";
             nameInput.value = "";
-            isLock = false;
+            serialTxt.innerText = "---";
+            isLock = false; // Unlock for next scan
         }
 
         async function sendData(name, serial) {
