@@ -3,33 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rescue Inventory Scanner</title>
+    <title>Advanced Pro Scanner</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         :root { --primary: #2563eb; --bg: #f8fafc; }
-        body { font-family: system-ui, sans-serif; background: var(--bg); padding: 10px; display: flex; flex-direction: column; align-items: center; margin: 0; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); padding: 15px; display: flex; flex-direction: column; align-items: center; margin: 0; }
         
-        #reader-wrapper { 
-            position: relative; width: 100%; max-width: 600px; height: 350px; 
-            border-radius: 12px; overflow: hidden; background: #000; 
-            border: 3px solid #cbd5e1;
-        }
-        #reader { width: 100%; height: 100%; }
+        /* Scanner Container */
+        #reader-wrapper { position: relative; width: 100%; max-width: 500px; border-radius: 12px; overflow: hidden; background: #000; }
+        #reader { width: 100%; }
         
+        /* Laser Guide Line */
         .laser {
-            position: absolute; top: 50%; left: 5%; width: 90%; height: 2px;
-            background: red; box-shadow: 0 0 8px red; z-index: 10; pointer-events: none;
+            position: absolute; top: 50%; left: 10%; width: 80%; height: 2px;
+            background: rgba(255, 0, 0, 0.7); box-shadow: 0 0 8px red;
+            z-index: 10; pointer-events: none;
+            animation: scanning 2s infinite ease-in-out;
         }
+        @keyframes scanning { 0%, 100% { transform: translateY(-20px); } 50% { transform: translateY(20px); } }
 
-        .card { background: white; width: 100%; max-width: 600px; padding: 20px; border-radius: 15px; margin-top: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); box-sizing: border-box; }
-        .status-pill { display: inline-block; padding: 8px 16px; border-radius: 9999px; font-size: 0.9rem; font-weight: 700; margin-bottom: 15px; }
+        .card { background: white; width: 100%; max-width: 500px; padding: 20px; border-radius: 12px; margin-top: 15px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); box-sizing: border-box; }
+        .status-pill { display: inline-block; padding: 6px 12px; border-radius: 9999px; font-size: 0.85rem; font-weight: 600; margin-bottom: 15px; }
+        .syncing { background: #fef9c3; color: #854d0e; }
         .ready { background: #dcfce7; color: #166534; }
-        .error { background: #fee2e2; color: #991b1b; }
         
-        select { width: 100%; padding: 12px; border-radius: 8px; margin-bottom: 10px; font-size: 16px; }
-        #zoom-container { background: #f1f5f9; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
-        input[type="range"] { width: 100%; }
-        button { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; }
+        input[type="text"] { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #e2e8f0; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 1rem; }
+        .switch-box { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; font-weight: 500; color: #475569; }
+        #torch-btn { margin-top: 10px; background: #64748b; font-size: 0.8rem; padding: 8px; }
     </style>
 </head>
 <body>
@@ -40,154 +41,156 @@
     </div>
 
     <div class="card">
-        <div id="status" class="status-pill ready">Syncing...</div>
+        <div id="status" class="status-pill syncing">Initializing Camera...</div>
         
-        <select id="cam-list" onchange="switchCamera(this.value)"></select>
-        
-        <div id="zoom-container" style="display:none;">
-            <label style="font-size: 0.8rem;">Zoom Control:</label>
-            <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" oninput="applyZoom(this.value)">
+        <div class="switch-box">
+            <input type="checkbox" id="cont-scan">
+            <label for="cont-scan">Continuous Scan (Auto-Push)</label>
         </div>
 
-        <div style="display:flex; gap:10px; margin-bottom:15px;">
-            <input type="checkbox" id="cont-scan"> <label for="cont-scan">Auto-Push</label>
-        </div>
-
-        <div id="manual-form" style="display: none; border-top: 1px solid #eee; padding-top:10px;">
-            <p style="font-size: 0.8rem; color: #666; margin:0;">Serial Detected:</p>
+        <div id="manual-form" style="display: none;">
+            <p style="margin: 0; font-size: 0.8rem; color: #64748b;">Detected Serial:</p>
             <strong id="display-serial" style="font-size: 1.2rem; color: var(--primary);">---</strong>
-            <input type="text" id="item-name" placeholder="Item Name (Optional)" style="width:100%; padding:12px; margin:10px 0; border:1px solid #ccc; border-radius:8px;">
+            <input type="text" id="item-name" placeholder="Item Name (Optional)">
             <button onclick="manualPush()">Push to Sheet</button>
         </div>
         
-        <button id="torch-btn" style="display:none; margin-top:10px; background:#475569;" onclick="toggleTorch()">Toggle Flashlight</button>
+        <button id="torch-btn" style="display:none;" onclick="toggleTorch()">Toggle Flashlight</button>
     </div>
 
     <script>
-        // REPLACE WITH YOUR URL
+        // 1. CONFIGURATION
         const scriptURL = "https://script.google.com/macros/s/AKfycbzNSy4eQ5Tm3ZR429ozDAp7MekYHzQu5qEmLAFgYpqtUaxHGAIjMcEG5a4R9vqrrhKn/exec";
-        
-        let html5QrCode;
-        let cache = new Set();
+        const cache = new Set();
         let isLock = false;
+        let html5QrCode;
         let isTorchOn = false;
 
-        async function init() {
-            try {
-                const cameras = await Html5Qrcode.getCameras();
-                if (cameras && cameras.length) {
-                    const camList = document.getElementById('cam-list');
-                    // Check labels for "back" to help find the right lens
-                    cameras.forEach((camera, index) => {
-                        const option = document.createElement('option');
-                        option.value = camera.id;
-                        option.text = camera.label || `Camera ${index + 1}`;
-                        camList.appendChild(option);
-                    });
-                    // Pick the last camera (often the main back camera)
-                    startScanner(cameras[cameras.length - 1].id);
-                }
-            } catch (err) { document.getElementById('status').innerText = "Permission Denied"; }
-            loadCache();
-        }
+        const statusEl = document.getElementById('status');
+        const contSwitch = document.getElementById('cont-scan');
+        const manualForm = document.getElementById('manual-form');
+        const serialTxt = document.getElementById('display-serial');
+        const nameInput = document.getElementById('item-name');
+        const torchBtn = document.getElementById('torch-btn');
 
-        async function startScanner(cameraId) {
-            if (html5QrCode) { 
-                try { await html5QrCode.stop(); } catch (e) {} 
-            }
-            
+        // 2. INITIALIZE ADVANCED SCANNER
+        async function startScanner() {
             html5QrCode = new Html5Qrcode("reader");
-
+            
             const config = { 
                 fps: 20, 
-                qrbox: { width: 300, height: 200 }, // Scaled down slightly to prevent lag
-                aspectRatio: 1.0,
-                // Using standard constraints to prevent the "108MP noise" crash
-                videoConstraints: { 
-                    deviceId: { exact: cameraId },
-                    facingMode: "environment"
+                qrbox: { width: 300, height: 150 },
+                aspectRatio: 1.777778, // 16:9
+                videoConstraints: {
+                    facingMode: "environment",
+                    focusMode: "continuous",
+                    whiteBalanceMode: "continuous"
                 }
             };
 
             try {
-                await html5QrCode.start(cameraId, config, onScanSuccess);
-                checkCapabilities();
-            } catch (err) { 
+                await html5QrCode.start(
+                    { facingMode: "environment" }, 
+                    config, 
+                    onScanSuccess
+                );
+                
+                // Show torch button if hardware supports it
+                const capabilities = html5QrCode.getRunningTrackCapabilities();
+                if (capabilities.torch) torchBtn.style.display = "block";
+                
+                loadCache();
+            } catch (err) {
+                statusEl.innerText = "Camera Error. Check Permissions.";
                 console.error(err);
-                // Fail-safe: Try without exact device ID if it fails
-                html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
             }
         }
 
-        function onScanSuccess(decodedText) {
-            if (isLock) return;
-            if (cache.has(decodedText)) return;
-
-            const display = document.getElementById('display-serial');
-            if (document.getElementById('cont-scan').checked) {
-                autoPush(decodedText);
-            } else if (decodedText !== display.innerText) {
-                display.innerText = decodedText;
-                document.getElementById('manual-form').style.display = "block";
-                if (navigator.vibrate) navigator.vibrate(50);
-            }
-        }
-
-        // --- Helper Functions ---
-        async function checkCapabilities() {
-            const track = html5QrCode.getRunningTrack();
-            const caps = track.getCapabilities();
-            if (caps.torch) document.getElementById('torch-btn').style.display = "block";
-            if (caps.zoom) {
-                const s = document.getElementById('zoom-slider');
-                s.min = caps.zoom.min; s.max = caps.zoom.max; s.step = caps.zoom.step;
-                document.getElementById('zoom-container').style.display = "block";
-            }
-        }
-
-        function applyZoom(val) { html5QrCode.getRunningTrack().applyConstraints({advanced: [{zoom: val}]}); }
-        function switchCamera(val) { startScanner(val); }
-        async function toggleTorch() { 
-            isTorchOn = !isTorchOn; 
-            await html5QrCode.applyVideoConstraints({advanced: [{torch: isTorchOn}]}); 
-        }
-
+        // 3. FETCH CACHE
         async function loadCache() {
             try {
                 const res = await fetch(`${scriptURL}?action=fetch`);
                 const data = await res.json();
                 data.serials.forEach(s => cache.add(String(s)));
-                document.getElementById('status').innerText = `Ready: ${cache.size} Items`;
-            } catch (e) { document.getElementById('status').innerText = "Offline Mode"; }
+                statusEl.innerText = `Ready: ${cache.size} items in Sheet`;
+                statusEl.className = "status-pill ready";
+            } catch (e) {
+                statusEl.innerText = "Sync Failed (CORS or URL error)";
+            }
         }
 
-        async function sendData(name, serial) {
-            isLock = true;
-            try {
-                const res = await fetch(`${scriptURL}?action=push&name=${encodeURIComponent(name)}&serial=${encodeURIComponent(serial)}`);
-                const result = await res.json();
-                if (result.status === "success") {
-                    cache.add(serial);
-                    document.getElementById('status').innerText = "Added Successfully!";
+        // 4. SCAN HANDLER
+                // 3. SCAN HANDLER
+        function onScanSuccess(decodedText) {
+            // 1. If we are currently in the middle of a network request (pushing), stay locked
+            if (isLock) return;
+
+            // 2. Check if this code is already in the Google Sheet (Cache)
+            if (cache.has(decodedText)) {
+                statusEl.innerText = `Duplicate: ${decodedText}`;
+                return;
+            }
+
+            // 3. If Continuous Mode is ON
+            if (contSwitch.checked) {
+                autoPush(decodedText);
+            } 
+            // 4. If Manual Mode is ON
+            else {
+                // If the new scan is DIFFERENT from the one currently displayed
+                if (decodedText !== serialTxt.innerText) {
+                    statusEl.innerText = "New code detected - Updating form";
+                    serialTxt.innerText = decodedText;
+                    nameInput.value = ""; // Clear the old name
+                    manualForm.style.display = "block";
                 }
-            } catch (e) { alert("Push Failed"); }
-            isLock = false;
+            }
         }
 
         async function autoPush(serial) {
+            isLock = true; // Temporary lock for network request
+            statusEl.innerText = `Auto-Pushing: ${serial}...`;
             await sendData("", serial);
-            setTimeout(() => { isLock = false; }, 2000);
+            
+            // Short cooldown so it doesn't scan the same item twice instantly
+            setTimeout(() => { isLock = false; }, 2000); 
         }
 
         async function manualPush() {
-            const name = document.getElementById('item-name').value;
-            const serial = document.getElementById('display-serial').innerText;
-            await sendData(name, serial);
-            document.getElementById('manual-form').style.display = "none";
-            document.getElementById('display-serial').innerText = "---";
+            isLock = true; // Lock while pushing
+            statusEl.innerText = "Pushing...";
+            await sendData(nameInput.value, serialTxt.innerText);
+            
+            // Reset UI after success
+            manualForm.style.display = "none";
+            nameInput.value = "";
+            serialTxt.innerText = "---";
+            isLock = false; // Unlock for next scan
         }
 
-        window.addEventListener('DOMContentLoaded', init);
+        async function sendData(name, serial) {
+            const query = `?action=push&name=${encodeURIComponent(name)}&serial=${encodeURIComponent(serial)}`;
+            try {
+                const res = await fetch(scriptURL + query);
+                const result = await res.json();
+                if (result.status === "success") {
+                    cache.add(serial);
+                    statusEl.innerText = `Successfully Added!`;
+                }
+            } catch (e) {
+                statusEl.innerText = "Push Failed. Check Connection.";
+            }
+        }
+
+        async function toggleTorch() {
+            isTorchOn = !isTorchOn;
+            await html5QrCode.applyVideoConstraints({
+                advanced: [{ torch: isTorchOn }]
+            });
+        }
+
+        // Run on load
+        window.addEventListener('DOMContentLoaded', startScanner);
     </script>
 </body>
 </html>
