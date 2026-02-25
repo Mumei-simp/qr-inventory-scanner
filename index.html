@@ -8,34 +8,18 @@
     <style>
         :root { --primary: #2563eb; --bg: #0f172a; --error: #dc2626; }
         body { font-family: system-ui, sans-serif; background: var(--bg); color: white; padding: 10px; display: flex; flex-direction: column; align-items: center; margin: 0; }
-        
         #reader video { filter: contrast(1.6) brightness(1.1) grayscale(0.4); object-fit: cover !important; }
-
-        #reader-wrapper { 
-            position: relative; width: 100%; max-width: 500px; 
-            border-radius: 12px; overflow: hidden; border: 2px solid #334155; 
-            background: #000;
-        }
-        
-        .laser {
-            position: absolute; top: 40%; left: 5%; width: 90%; height: 2px;
-            background: #22c55e; box-shadow: 0 0 12px #22c55e;
-            z-index: 10; pointer-events: none; animation: scanning 2s infinite ease-in-out;
-        }
+        #reader-wrapper { position: relative; width: 100%; max-width: 500px; border-radius: 12px; overflow: hidden; border: 2px solid #334155; background: #000; }
+        .laser { position: absolute; top: 40%; left: 5%; width: 90%; height: 2px; background: #22c55e; box-shadow: 0 0 12px #22c55e; z-index: 10; pointer-events: none; animation: scanning 2s infinite ease-in-out; }
         @keyframes scanning { 0%, 100% { transform: translateY(-40px); } 50% { transform: translateY(40px); } }
-
         .card { background: #1e293b; width: 100%; max-width: 500px; padding: 15px; border-radius: 12px; margin-top: 10px; box-sizing: border-box; border: 1px solid #334155; }
-        
         .status-pill { display: block; text-align: center; padding: 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 800; margin-bottom: 12px; text-transform: uppercase; }
         .syncing { background: #334155; color: #94a3b8; }
         .ready { background: #16a34a; color: white; }
         .is-dup { background: var(--error); color: white; }
-
-        /* Zoom Dial Styling - Now in the UI Card */
         .zoom-row { margin-bottom: 15px; background: #0f172a; padding: 10px; border-radius: 8px; border: 1px solid #334155; }
         .zoom-header { display: flex; justify-content: space-between; font-size: 0.75rem; color: #94a3b8; margin-bottom: 8px; font-weight: bold; }
         input[type="range"] { width: 100%; height: 10px; border-radius: 5px; background: #334155; accent-color: #3b82f6; cursor: pointer; }
-
         input[type="text"] { width: 100%; padding: 14px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 16px; margin: 10px 0; }
         button { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; }
         .bottom-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
@@ -72,7 +56,7 @@
         
         <div class="bottom-btns">
             <button id="torch-btn" style="display:none; background: #475569;" onclick="toggleTorch()">🔦 LIGHT</button>
-            <button style="background: #475569;" onclick="location.reload()">🔄 REFRESH</button>
+            <button style="background: #475569;" onclick="refreshAll()">🔄 REFRESH</button>
         </div>
     </div>
 
@@ -93,6 +77,33 @@
         const zoomValue = document.getElementById('zoom-value');
         const zoomContainer = document.getElementById('zoom-container');
 
+        // Helper to get the active video track reliably
+        async function getActiveVideoTrack(retries = 6, delayMs = 300) {
+            // Try library method first if available
+            try {
+                if (html5QrCode && typeof html5QrCode.getRunningTrack === 'function') {
+                    const t = html5QrCode.getRunningTrack();
+                    if (t) return t;
+                }
+            } catch (e) {
+                console.log('getRunningTrack not available or threw', e);
+            }
+
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const video = document.querySelector('#reader video');
+                    if (video && video.srcObject) {
+                        const tracks = video.srcObject.getVideoTracks();
+                        if (tracks && tracks.length) return tracks[0];
+                    }
+                } catch (e) {
+                    console.log('video track read attempt failed', e);
+                }
+                await new Promise(r => setTimeout(r, delayMs));
+            }
+            return null;
+        }
+
         async function init() {
             html5QrCode = new Html5Qrcode("reader");
             
@@ -100,10 +111,14 @@
             try {
                 const res = await fetch(`${scriptURL}?action=fetch`);
                 const data = await res.json();
-                if(data.serials) data.serials.forEach(s => cache.add(String(s).trim()));
+                if (data.serials) data.serials.forEach(s => cache.add(String(s).trim()));
                 statusEl.innerText = `${cache.size} ITEMS LOADED`;
                 statusEl.className = "status-pill ready";
-            } catch (e) { statusEl.innerText = "OFFLINE MODE"; }
+            } catch (e) {
+                console.warn('Fetch failed, offline mode', e);
+                statusEl.innerText = "OFFLINE MODE";
+                statusEl.className = "status-pill syncing";
+            }
 
             // 2. Start Camera
             const config = { 
@@ -117,45 +132,79 @@
                 // Wait a tiny bit for the track to stabilize before setting zoom
                 setTimeout(setupZoom, 500);
             } catch (err) { 
+                console.error('Camera start failed', err);
                 statusEl.innerText = "CAMERA ERROR";
                 statusEl.className = "status-pill is-dup";
             }
         }
 
-        function setupZoom() {
+        async function setupZoom() {
             try {
-                const track = html5QrCode.getRunningTrack();
-                const caps = track.getCapabilities();
-                
-                if (caps.zoom) {
-                    zoomContainer.style.display = "block";
-                    zoomDial.min = caps.zoom.min;
-                    zoomDial.max = caps.zoom.max;
-                    // Default to 2x for clarity
-                    zoomDial.value = Math.min(2.0, caps.zoom.max);
-                    applyZoom(zoomDial.value);
-
-                    zoomDial.addEventListener('input', (e) => applyZoom(e.target.value));
+                const track = await getActiveVideoTrack();
+                if (!track) {
+                    console.log('No active track found for zoom/torch');
+                    return;
                 }
-                if (caps.torch) torchBtn.style.display = "block";
-            } catch(e) { console.log("Zoom setup skipped"); }
+                const caps = track.getCapabilities ? track.getCapabilities() : {};
+                // Zoom
+                if (caps && typeof caps.zoom !== 'undefined') {
+                    const min = caps.zoom.min ?? 1;
+                    const max = caps.zoom.max ?? 1;
+                    const step = caps.zoom.step ?? 0.1;
+                    zoomContainer.style.display = "block";
+                    zoomDial.min = min;
+                    zoomDial.max = max;
+                    zoomDial.step = step;
+                    // Default to 2x or mid value if available
+                    const defaultZoom = Math.min(2.0, max);
+                    zoomDial.value = defaultZoom;
+                    applyZoom(zoomDial.value);
+                    zoomDial.addEventListener('input', (e) => applyZoom(e.target.value));
+                } else {
+                    console.log('Zoom capability not present');
+                }
+                // Torch
+                if (caps && caps.torch) {
+                    torchBtn.style.display = "block";
+                } else {
+                    // Some browsers expose torch capability differently; still show if track supports applyConstraints torch
+                    try {
+                        // quick test applyConstraints with same value to see if it throws
+                        await track.applyConstraints({ advanced: [{ torch: isTorchOn }] }).catch(() => {});
+                        torchBtn.style.display = "block";
+                    } catch (e) {
+                        console.log('Torch not supported', e);
+                    }
+                }
+            } catch (e) {
+                console.log("Zoom setup skipped or failed", e);
+            }
         }
 
         async function applyZoom(val) {
             try {
-                const track = html5QrCode.getRunningTrack();
-                zoomValue.innerText = `${parseFloat(val).toFixed(1)}x`;
-                await track.applyConstraints({ advanced: [{ zoom: parseFloat(val) }] });
-            } catch(e) { console.error("Zoom failed"); }
+                const track = await getActiveVideoTrack();
+                if (!track) return;
+                const numeric = parseFloat(val);
+                zoomValue.innerText = `${numeric.toFixed(1)}x`;
+                // Some devices expect zoom as number, others as 'zoom'
+                await track.applyConstraints({ advanced: [{ zoom: numeric }] });
+            } catch (e) {
+                console.error("Zoom failed", e);
+            }
         }
 
         function onScanSuccess(decodedText) {
-            if (isLock) return;
             const cleanCode = decodedText.trim();
 
+            // Keep scanning continuous even if isLock is true.
+            // isLock only prevents pushes; UI still updates for each new code.
             if (cache.has(cleanCode)) {
                 statusEl.innerText = `DUPLICATE: ${cleanCode}`;
                 statusEl.className = "status-pill is-dup";
+                // still show the serial so operator sees it
+                serialTxt.innerText = cleanCode;
+                manualForm.style.display = "block";
                 return; 
             }
 
@@ -166,18 +215,25 @@
                 nameInput.value = ""; 
                 manualForm.style.display = "block";
                 if (navigator.vibrate) navigator.vibrate([40, 40]);
-                if (contSwitch.checked) autoPush(cleanCode);
+
+                // Only auto-push if not locked
+                if (contSwitch.checked && !isLock) {
+                    autoPush(cleanCode);
+                }
             }
         }
 
         async function autoPush(serial) {
+            // keep isLock behavior as before to prevent concurrent pushes
             isLock = true;
             statusEl.innerText = "AUTO-SENDING...";
             await sendData("", serial);
+            // release lock after a short delay to allow continuous scanning to continue
             setTimeout(() => { isLock = false; }, 1200); 
         }
 
         async function manualPush() {
+            // keep isLock behavior as before
             isLock = true;
             statusEl.innerText = "SENDING...";
             await sendData(nameInput.value, serialTxt.innerText);
@@ -195,8 +251,13 @@
                     cache.add(serial);
                     statusEl.innerText = "SUCCESSFULLY PUSHED";
                     statusEl.className = "status-pill ready";
+                } else {
+                    console.warn('Push returned non-success', result);
+                    statusEl.innerText = "PUSH FAILED";
+                    statusEl.className = "status-pill is-dup";
                 }
             } catch (e) { 
+                console.error('Connection failed', e);
                 statusEl.innerText = "CONNECTION FAILED";
                 statusEl.className = "status-pill is-dup";
             }
@@ -205,9 +266,41 @@
         async function toggleTorch() {
             try {
                 isTorchOn = !isTorchOn;
-                const track = html5QrCode.getRunningTrack();
+                const track = await getActiveVideoTrack();
+                if (!track) return;
                 await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
-            } catch(e) { }
+            } catch (e) {
+                console.log('Torch toggle failed', e);
+            }
+        }
+
+        async function refreshAll() {
+            // Graceful refresh: re-fetch cache and restart scanner without full page reload
+            statusEl.innerText = "REFRESHING...";
+            statusEl.className = "status-pill syncing";
+            try {
+                const res = await fetch(`${scriptURL}?action=fetch`);
+                const data = await res.json();
+                cache.clear();
+                if (data.serials) data.serials.forEach(s => cache.add(String(s).trim()));
+                statusEl.innerText = `${cache.size} ITEMS LOADED`;
+                statusEl.className = "status-pill ready";
+            } catch (e) {
+                console.warn('Refresh fetch failed', e);
+                statusEl.innerText = "OFFLINE MODE";
+                statusEl.className = "status-pill syncing";
+            }
+            // restart scanner to ensure track/capabilities re-evaluated
+            try {
+                await html5QrCode.stop();
+            } catch (e) { /* ignore */ }
+            try {
+                const config = { fps: 30, qrbox: { width: 280, height: 160 }, videoConstraints: { facingMode: "environment" } };
+                await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
+                setTimeout(setupZoom, 500);
+            } catch (e) {
+                console.error('Restart scanner failed', e);
+            }
         }
 
         window.addEventListener('DOMContentLoaded', init);
