@@ -3,16 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultra-Clarity Pro Scanner</title>
+    <title>Precision Scanner Pro</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         :root { --primary: #2563eb; --bg: #0f172a; }
         body { font-family: system-ui, sans-serif; background: var(--bg); color: white; padding: 15px; display: flex; flex-direction: column; align-items: center; margin: 0; }
         
-        /* THE SECRET SAUCE: Visual Pre-processing */
         #reader video {
-            /* Boosts contrast and sharpness visually for the engine */
-            filter: contrast(1.4) brightness(1.1) grayscale(0.5);
+            filter: contrast(1.5) brightness(1.1) grayscale(0.3);
             object-fit: cover !important;
         }
 
@@ -27,24 +25,24 @@
         }
         
         .laser {
-            position: absolute; top: 50%; left: 5%; width: 90%; height: 3px;
-            background: #ff004c; box-shadow: 0 0 15px #ff004c;
+            position: absolute; top: 50%; left: 5%; width: 90%; height: 2px;
+            background: #22c55e; box-shadow: 0 0 12px #22c55e;
             z-index: 10; pointer-events: none;
-            animation: scanning 1.5s infinite ease-in-out;
+            animation: scanning 2s infinite ease-in-out;
         }
-        @keyframes scanning { 0%, 100% { transform: translateY(-40px); } 50% { transform: translateY(40px); } }
+        @keyframes scanning { 0%, 100% { transform: translateY(-45px); } 50% { transform: translateY(45px); } }
 
         .card { background: #1e293b; width: 100%; max-width: 500px; padding: 20px; border-radius: 16px; margin-top: 15px; box-sizing: border-box; border: 1px solid #334155; }
-        .status-pill { display: inline-block; padding: 8px 16px; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .status-pill { display: inline-block; padding: 8px 16px; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; margin-bottom: 15px; text-transform: uppercase; }
         .syncing { background: #475569; color: #cbd5e1; }
         .ready { background: #059669; color: #ecfdf5; }
         
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
         input[type="text"] { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 16px; margin-bottom: 10px; }
-        button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
-        button:active { opacity: 0.7; }
+        button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
         
-        .zoom-info { font-size: 0.7rem; color: #94a3b8; text-align: center; margin-top: 8px; }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+        #torch-btn { background: #4b5563; }
+        .zoom-label { font-size: 0.75rem; color: #94a3b8; text-align: center; margin-bottom: 10px; display: block; }
     </style>
 </head>
 <body>
@@ -53,25 +51,26 @@
         <div id="reader"></div>
         <div class="laser"></div>
     </div>
-    <p class="zoom-info">Tip: Hold phone 6-8 inches away. 2x Digital Zoom active for small codes.</p>
 
     <div class="card">
-        <div id="status" class="status-pill syncing">Initializing HQ Sensors...</div>
+        <span class="zoom-label">3.0x Macro Zoom Active — Keep Distance</span>
+        <div id="status" class="status-pill syncing">Initializing...</div>
         
-        <div style="margin-bottom: 15px;">
-            <input type="checkbox" id="cont-scan" checked>
-            <label for="cont-scan">Auto-Push (Rapid Scan)</label>
+        <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="cont-scan">
+            <label for="cont-scan" style="font-size: 0.9rem;">Auto-Push to Sheet</label>
         </div>
 
-        <div id="manual-form" style="display: none;">
+        <div id="manual-form" style="display: none; border-top: 1px solid #334155; padding-top: 15px;">
+            <span style="font-size: 0.7rem; color: #94a3b8;">ACTIVE CODE:</span>
             <strong id="display-serial" style="font-size: 1.2rem; color: #60a5fa; display: block; margin-bottom: 10px;">---</strong>
-            <input type="text" id="item-name" placeholder="Item Label/Name">
-            <button onclick="manualPush()">Confirm & Sync</button>
+            <input type="text" id="item-name" placeholder="Optional Item Name">
+            <button onclick="manualPush()">Push to Sheet</button>
         </div>
         
         <div class="controls">
-            <button id="torch-btn" style="display:none; background: #4b5563;" onclick="toggleTorch()">🔦 Flashlight</button>
-            <button style="background: #4b5563;" onclick="location.reload()">🔄 Reset</button>
+            <button id="torch-btn" style="display:none;" onclick="toggleTorch()">🔦 Flashlight</button>
+            <button style="background: #334155;" onclick="location.reload()">🔄 Refresh</button>
         </div>
     </div>
 
@@ -92,36 +91,32 @@
         async function startScanner() {
             html5QrCode = new Html5Qrcode("reader");
             
-            // OPTIMIZED CONFIG FOR HIGH-RES 108MP SENSORS
             const config = { 
-                fps: 30, // Faster processing
-                qrbox: { width: 280, height: 180 }, // Wide box for 1D barcodes
-                aspectRatio: 1.0, 
+                fps: 30, 
+                qrbox: { width: 300, height: 160 },
                 videoConstraints: {
                     facingMode: "environment",
-                    // Requesting Full HD to ensure small barcodes have enough pixels
                     width: { ideal: 1920 },
-                    height: { ideal: 1080 },
-                    focusMode: "continuous"
+                    height: { ideal: 1080 }
                 }
             };
 
             try {
                 await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
                 
-                // APPLY HARDWARE ZOOM
-                // This prevents the "Blurry close-up" issue by allowing you to stand back
+                // FORCE 3.0X ZOOM
                 const track = html5QrCode.getRunningTrack();
-                const capabilities = track.getCapabilities();
-                
-                if (capabilities.zoom) {
-                    await track.applyConstraints({ advanced: [{ zoom: 2.0 }] });
+                const caps = track.getCapabilities();
+                if (caps.zoom) {
+                    // We set to 3.0 or the max the phone allows, whichever is lower
+                    const targetZoom = Math.min(3.0, caps.zoom.max);
+                    await track.applyConstraints({ advanced: [{ zoom: targetZoom }] });
                 }
-                if (capabilities.torch) torchBtn.style.display = "block";
+                if (caps.torch) torchBtn.style.display = "block";
                 
                 loadCache();
             } catch (err) {
-                statusEl.innerText = "Camera Error. Check Permissions.";
+                statusEl.innerText = "Camera Error";
             }
         }
 
@@ -130,40 +125,43 @@
                 const res = await fetch(`${scriptURL}?action=fetch`);
                 const data = await res.json();
                 data.serials.forEach(s => cache.add(String(s)));
-                statusEl.innerText = `Online: ${cache.size} Rows Synced`;
+                statusEl.innerText = `Ready: ${cache.size} Items`;
                 statusEl.className = "status-pill ready";
             } catch (e) {
-                statusEl.innerText = "Offline Mode (Cache Empty)";
+                statusEl.innerText = "Offline/Sync Error";
             }
         }
 
         function onScanSuccess(decodedText) {
             if (isLock) return;
-            if (cache.has(decodedText)) return; // Silent ignore for duplicates
+            if (cache.has(decodedText)) return;
 
-            // Vibration feedback for success
-            if (navigator.vibrate) navigator.vibrate(100);
+            // AUTO-RESET LOGIC:
+            // If new scan is different from current display, overwrite immediately
+            if (decodedText !== serialTxt.innerText) {
+                if (navigator.vibrate) navigator.vibrate([50, 30, 50]); // Distinct "new focus" vibe
+                
+                serialTxt.innerText = decodedText;
+                nameInput.value = ""; // Clear old name for the new code
+                manualForm.style.display = "block";
+                statusEl.innerText = "New Code Focused";
 
-            if (contSwitch.checked) {
-                autoPush(decodedText);
-            } else {
-                if (decodedText !== serialTxt.innerText) {
-                    serialTxt.innerText = decodedText;
-                    manualForm.style.display = "block";
+                if (contSwitch.checked) {
+                    autoPush(decodedText);
                 }
             }
         }
 
         async function autoPush(serial) {
             isLock = true;
-            statusEl.innerText = `Sending: ${serial}`;
+            statusEl.innerText = "Auto-Pushing...";
             await sendData("", serial);
             setTimeout(() => { isLock = false; }, 1500); 
         }
 
         async function manualPush() {
             isLock = true;
-            statusEl.innerText = "Syncing...";
+            statusEl.innerText = "Pushing...";
             await sendData(nameInput.value, serialTxt.innerText);
             manualForm.style.display = "none";
             nameInput.value = "";
@@ -178,10 +176,10 @@
                 const result = await res.json();
                 if (result.status === "success") {
                     cache.add(serial);
-                    statusEl.innerText = `Saved: ${serial}`;
+                    statusEl.innerText = `Success: ${serial}`;
                 }
             } catch (e) {
-                statusEl.innerText = "Sync Error!";
+                statusEl.innerText = "Push Failed";
             }
         }
 
