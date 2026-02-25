@@ -13,18 +13,10 @@
 
         #reader-wrapper { 
             position: relative; width: 100%; max-width: 500px; 
-            aspect-ratio: 1/1.2; /* Forces it to be a bit shorter to save space */
             border-radius: 12px; overflow: hidden; border: 2px solid #334155; 
+            background: #000;
         }
         
-        /* Floating Zoom Control inside the camera box */
-        #zoom-floating-box {
-            position: absolute; bottom: 0; left: 0; right: 0;
-            background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(4px);
-            padding: 10px 15px; z-index: 20; border-top: 1px solid #334155;
-            display: none;
-        }
-
         .laser {
             position: absolute; top: 40%; left: 5%; width: 90%; height: 2px;
             background: #22c55e; box-shadow: 0 0 12px #22c55e;
@@ -32,17 +24,21 @@
         }
         @keyframes scanning { 0%, 100% { transform: translateY(-40px); } 50% { transform: translateY(40px); } }
 
-        .card { background: #1e293b; width: 100%; max-width: 500px; padding: 15px; border-radius: 12px; margin-top: 10px; box-sizing: border-box; }
+        .card { background: #1e293b; width: 100%; max-width: 500px; padding: 15px; border-radius: 12px; margin-top: 10px; box-sizing: border-box; border: 1px solid #334155; }
         
-        .status-pill { display: block; text-align: center; padding: 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 800; margin-bottom: 10px; text-transform: uppercase; }
+        .status-pill { display: block; text-align: center; padding: 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 800; margin-bottom: 12px; text-transform: uppercase; }
         .syncing { background: #334155; color: #94a3b8; }
         .ready { background: #16a34a; color: white; }
         .is-dup { background: var(--error); color: white; }
 
-        input[type="range"] { width: 100%; height: 12px; border-radius: 6px; background: #334155; accent-color: #60a5fa; cursor: pointer; margin-top: 5px; }
+        /* Zoom Dial Styling - Now in the UI Card */
+        .zoom-row { margin-bottom: 15px; background: #0f172a; padding: 10px; border-radius: 8px; border: 1px solid #334155; }
+        .zoom-header { display: flex; justify-content: space-between; font-size: 0.75rem; color: #94a3b8; margin-bottom: 8px; font-weight: bold; }
+        input[type="range"] { width: 100%; height: 10px; border-radius: 5px; background: #334155; accent-color: #3b82f6; cursor: pointer; }
 
         input[type="text"] { width: 100%; padding: 14px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 16px; margin: 10px 0; }
         button { width: 100%; padding: 16px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; }
+        .bottom-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
     </style>
 </head>
 <body>
@@ -50,31 +46,31 @@
     <div id="reader-wrapper">
         <div id="reader"></div>
         <div class="laser"></div>
-        
-        <div id="zoom-floating-box">
-            <div style="display: flex; justify-content: space-between; font-size: 0.7rem; color: #94a3b8;">
-                <span>MAGNIFICATION</span>
-                <span id="zoom-value">1.0x</span>
-            </div>
-            <input type="range" id="zoom-dial" min="1" max="5" step="0.1" value="1">
-        </div>
     </div>
 
     <div class="card">
         <div id="status" class="status-pill syncing">FETCHING DATABASE...</div>
         
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-            <input type="checkbox" id="cont-scan">
-            <label for="cont-scan" style="font-size: 0.85rem;">Auto-Push to Sheet</label>
+        <div id="zoom-container" class="zoom-row" style="display:none;">
+            <div class="zoom-header">
+                <span>ZOOM MAGNIFICATION</span>
+                <span id="zoom-value">1.0x</span>
+            </div>
+            <input type="range" id="zoom-dial" min="1" max="5" step="0.1" value="1">
         </div>
 
-        <div id="manual-form" style="display: none; border-top: 1px solid #475569; padding-top: 10px;">
-            <div id="display-serial" style="font-size: 1.2rem; font-weight: 800; color: #60a5fa; margin-bottom: 5px;">---</div>
-            <input type="text" id="item-name" placeholder="Item Name (Optional)...">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+            <input type="checkbox" id="cont-scan">
+            <label for="cont-scan" style="font-size: 0.9rem; font-weight: 500;">Auto-Push to Sheet</label>
+        </div>
+
+        <div id="manual-form" style="display: none; border-top: 1px solid #475569; padding-top: 15px;">
+            <div id="display-serial" style="font-size: 1.3rem; font-weight: 800; color: #60a5fa; margin-bottom: 5px;">---</div>
+            <input type="text" id="item-name" placeholder="Item Name (Optional)">
             <button onclick="manualPush()">PUSH DATA</button>
         </div>
         
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+        <div class="bottom-btns">
             <button id="torch-btn" style="display:none; background: #475569;" onclick="toggleTorch()">🔦 LIGHT</button>
             <button style="background: #475569;" onclick="location.reload()">🔄 REFRESH</button>
         </div>
@@ -95,11 +91,12 @@
         const torchBtn = document.getElementById('torch-btn');
         const zoomDial = document.getElementById('zoom-dial');
         const zoomValue = document.getElementById('zoom-value');
-        const zoomBox = document.getElementById('zoom-floating-box');
+        const zoomContainer = document.getElementById('zoom-container');
 
         async function init() {
             html5QrCode = new Html5Qrcode("reader");
             
+            // 1. Fetch Duplicates
             try {
                 const res = await fetch(`${scriptURL}?action=fetch`);
                 const data = await res.json();
@@ -108,38 +105,48 @@
                 statusEl.className = "status-pill ready";
             } catch (e) { statusEl.innerText = "OFFLINE MODE"; }
 
+            // 2. Start Camera
             const config = { 
                 fps: 30, 
-                qrbox: { width: 300, height: 160 },
+                qrbox: { width: 280, height: 160 },
                 videoConstraints: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }
             };
 
             try {
                 await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
-                setupZoom();
-            } catch (err) { statusEl.innerText = "CAMERA ERROR"; }
+                // Wait a tiny bit for the track to stabilize before setting zoom
+                setTimeout(setupZoom, 500);
+            } catch (err) { 
+                statusEl.innerText = "CAMERA ERROR";
+                statusEl.className = "status-pill is-dup";
+            }
         }
 
         function setupZoom() {
-            const track = html5QrCode.getRunningTrack();
-            const caps = track.getCapabilities();
-            
-            if (caps.zoom) {
-                zoomBox.style.display = "block";
-                zoomDial.min = caps.zoom.min;
-                zoomDial.max = caps.zoom.max;
-                zoomDial.value = Math.min(2.0, caps.zoom.max);
-                applyZoom(zoomDial.value);
+            try {
+                const track = html5QrCode.getRunningTrack();
+                const caps = track.getCapabilities();
+                
+                if (caps.zoom) {
+                    zoomContainer.style.display = "block";
+                    zoomDial.min = caps.zoom.min;
+                    zoomDial.max = caps.zoom.max;
+                    // Default to 2x for clarity
+                    zoomDial.value = Math.min(2.0, caps.zoom.max);
+                    applyZoom(zoomDial.value);
 
-                zoomDial.addEventListener('input', (e) => applyZoom(e.target.value));
-            }
-            if (caps.torch) torchBtn.style.display = "block";
+                    zoomDial.addEventListener('input', (e) => applyZoom(e.target.value));
+                }
+                if (caps.torch) torchBtn.style.display = "block";
+            } catch(e) { console.log("Zoom setup skipped"); }
         }
 
         async function applyZoom(val) {
-            const track = html5QrCode.getRunningTrack();
-            zoomValue.innerText = `${parseFloat(val).toFixed(1)}x`;
-            await track.applyConstraints({ advanced: [{ zoom: parseFloat(val) }] });
+            try {
+                const track = html5QrCode.getRunningTrack();
+                zoomValue.innerText = `${parseFloat(val).toFixed(1)}x`;
+                await track.applyConstraints({ advanced: [{ zoom: parseFloat(val) }] });
+            } catch(e) { console.error("Zoom failed"); }
         }
 
         function onScanSuccess(decodedText) {
@@ -167,7 +174,7 @@
             isLock = true;
             statusEl.innerText = "AUTO-SENDING...";
             await sendData("", serial);
-            setTimeout(() => { isLock = false; }, 1000); 
+            setTimeout(() => { isLock = false; }, 1200); 
         }
 
         async function manualPush() {
@@ -187,14 +194,20 @@
                 if (result.status === "success") {
                     cache.add(serial);
                     statusEl.innerText = "SUCCESSFULLY PUSHED";
+                    statusEl.className = "status-pill ready";
                 }
-            } catch (e) { statusEl.innerText = "CONNECTION FAILED"; }
+            } catch (e) { 
+                statusEl.innerText = "CONNECTION FAILED";
+                statusEl.className = "status-pill is-dup";
+            }
         }
 
         async function toggleTorch() {
-            isTorchOn = !isTorchOn;
-            const track = html5QrCode.getRunningTrack();
-            await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
+            try {
+                isTorchOn = !isTorchOn;
+                const track = html5QrCode.getRunningTrack();
+                await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
+            } catch(e) { }
         }
 
         window.addEventListener('DOMContentLoaded', init);
