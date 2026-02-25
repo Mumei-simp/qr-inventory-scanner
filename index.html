@@ -139,8 +139,27 @@
     .controls-row input[type="checkbox"]{width:18px;height:18px}
     label[for="cont-scan"]{font-size:0.95rem;color:var(--muted);font-weight:600}
 
-    #manual-form{display:none;border-top:1px solid #475569;padding-top:12px;margin-top:8px}
-    #display-serial{font-size:1.25rem;font-weight:800;color:var(--accent);margin-bottom:8px}
+    /* Always-visible serial entry */
+    .serial-row{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      margin-bottom:10px;
+    }
+    #serial-input{
+      flex:1;
+      padding:12px;
+      border-radius:8px;
+      border:1px solid var(--border);
+      background:#071226;
+      color:#fff;
+      font-size:15px;
+      box-sizing:border-box;
+    }
+    #serial-label{font-size:0.85rem;color:var(--muted);font-weight:700;margin-right:6px}
+
+    #manual-form{display:block;border-top:1px solid #475569;padding-top:12px;margin-top:8px}
+    #display-serial{display:none;font-size:1.25rem;font-weight:800;color:var(--accent);margin-bottom:8px}
     input[type="text"]{
       width:100%;
       padding:12px;
@@ -210,8 +229,14 @@
       <label for="cont-scan">Auto-Push to Sheet</label>
     </div>
 
+    <!-- Always-visible serial entry -->
+    <div class="serial-row" aria-hidden="false">
+      <div id="serial-label">Serial</div>
+      <input id="serial-input" type="text" placeholder="Scan or type serial here" aria-label="Serial entry">
+    </div>
+
+    <!-- Manual form (name + push/cancel) -->
     <div id="manual-form">
-      <div id="display-serial">---</div>
       <input id="item-name" type="text" placeholder="Item Name (Optional)" aria-label="Item name">
       <div style="display:flex;gap:10px;">
         <button id="push-btn" class="btn btn-primary" onclick="manualPush()">PUSH DATA</button>
@@ -228,7 +253,7 @@
 
   <script>
     // === CONFIG ===
-    const scriptURL = "https://script.google.com/macros/s/AKfycbyHSRlm4NTMABkzxi_uWudSDeo9Z7cSOm9vlKYGjvKe9d1yX2jyEKTQlfbJfWWYQOng/exec";
+    const scriptURL = "https://script.google.com/macros/s/AKfycbzNSy4eQ5Tm3ZR429ozDAp7MekYHzQu5qEmLAFgYpqtUaxHGAIjMcEG5a4R9vqrrhKn/exec";
 
     // === STATE ===
     const cache = new Set();        // normalized serials known to exist
@@ -242,7 +267,7 @@
     const statusEl = document.getElementById('status');
     const contSwitch = document.getElementById('cont-scan');
     const manualForm = document.getElementById('manual-form');
-    const serialTxt = document.getElementById('display-serial');
+    const serialInput = document.getElementById('serial-input');
     const nameInput = document.getElementById('item-name');
     const torchBtn = document.getElementById('torch-btn');
     const zoomDial = document.getElementById('zoom-dial');
@@ -272,8 +297,8 @@
       statusEl.className = "status-pill " + cls;
     }
 
-    function updatePushButtonState(serialRaw) {
-      const norm = normalizeCode(serialRaw);
+    function updatePushButtonStateFromInput() {
+      const norm = normalizeCode(serialInput.value);
       if (!norm || norm === '---') {
         pushBtn.className = 'btn btn-primary btn-disabled';
         pushBtn.disabled = true;
@@ -353,6 +378,14 @@
         console.error('Camera start failed', err);
         setStatus('CAMERA ERROR', 'is-dup');
       }
+
+      // Wire input events
+      serialInput.addEventListener('input', () => {
+        updatePushButtonStateFromInput();
+      });
+      nameInput.addEventListener('input', () => updatePushButtonStateFromInput());
+      // initialize button state
+      updatePushButtonStateFromInput();
     }
 
     // === ZOOM / TORCH ===
@@ -410,23 +443,25 @@
 
       if (!norm) return;
 
-      serialTxt.innerText = norm;
-      manualForm.style.display = "block";
-      nameInput.value = "";
+      // Put scanned content into always-visible serial input for editing
+      serialInput.value = norm;
+      updatePushButtonStateFromInput();
+      // show manual form (already visible) and focus serial input so user can edit
+      serialInput.focus();
 
       // Duplicate check (local)
       if (cache.has(norm)) {
         setStatus(`DUPLICATE: ${norm}`, 'is-dup');
-        updatePushButtonState(norm);
+        updatePushButtonStateFromInput();
         if (navigator.vibrate) navigator.vibrate([30]);
         return;
       }
 
       setStatus('CODE CAPTURED', 'ready');
-      updatePushButtonState(norm);
+      updatePushButtonStateFromInput();
       if (navigator.vibrate) navigator.vibrate([40, 40]);
 
-      // Auto-push with optimistic add
+      // Auto-push behavior: optimistic add then send (keeps previous behavior)
       if (contSwitch.checked && !isLock) {
         startPush(norm, "");
       }
@@ -439,14 +474,14 @@
 
       // If already known or pending, skip
       if (cache.has(serial) || pending.has(serial)) {
-        updatePushButtonState(serial);
+        updatePushButtonStateFromInput();
         return;
       }
 
       // Optimistic: mark pending and add to cache immediately
       pending.add(serial);
       cache.add(serial);
-      updatePushButtonState(serial);
+      updatePushButtonStateFromInput();
       setStatus('PENDING SEND...', 'pending');
 
       isLock = true;
@@ -479,23 +514,24 @@
       } finally {
         // release lock after short delay to allow continuous scanning
         setTimeout(() => { isLock = false; }, 800);
-        updatePushButtonState(serial);
+        updatePushButtonStateFromInput();
       }
     }
 
     async function manualPush() {
-      const raw = serialTxt.innerText || "";
+      const raw = serialInput.value || "";
       const serial = normalizeCode(raw);
       if (!serial) return;
       if (cache.has(serial) && !pending.has(serial)) {
-        updatePushButtonState(serial);
+        updatePushButtonStateFromInput();
         return;
       }
       await startPush(serial, nameInput.value || "");
-      // If push succeeded or at least recorded locally, hide form
+      // If push succeeded or at least recorded locally, clear input and name
       if (!pending.has(serial) && cache.has(serial)) {
-        manualForm.style.display = "none";
-        serialTxt.innerText = '---';
+        serialInput.value = '';
+        nameInput.value = '';
+        updatePushButtonStateFromInput();
       }
     }
 
@@ -540,10 +576,10 @@
 
     // Cancel / clear current serial in manual form
     function clearSerial() {
-      manualForm.style.display = "none";
-      serialTxt.innerText = '---';
+      serialInput.value = '';
       nameInput.value = '';
       helperText.innerText = '';
+      updatePushButtonStateFromInput();
     }
 
     // Torch toggle
@@ -555,9 +591,6 @@
         await track.applyConstraints({ advanced: [{ torch: isTorchOn }] });
       } catch (e) { console.log('Torch toggle failed', e); }
     }
-
-    // Keep push button state in sync when user types a name
-    nameInput.addEventListener('input', () => updatePushButtonState(serialTxt.innerText));
 
     // Start
     window.addEventListener('DOMContentLoaded', init);
