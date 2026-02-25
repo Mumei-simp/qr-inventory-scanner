@@ -6,7 +6,7 @@
     <title>Precision Scanner Pro</title>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
-        :root { --primary: #2563eb; --bg: #0f172a; }
+        :root { --primary: #2563eb; --bg: #0f172a; --error: #ef4444; }
         body { font-family: system-ui, sans-serif; background: var(--bg); color: white; padding: 15px; display: flex; flex-direction: column; align-items: center; margin: 0; }
         
         #reader video {
@@ -15,12 +15,8 @@
         }
 
         #reader-wrapper { 
-            position: relative; 
-            width: 100%; 
-            max-width: 500px; 
-            border-radius: 16px; 
-            overflow: hidden; 
-            border: 2px solid #334155;
+            position: relative; width: 100%; max-width: 500px; 
+            border-radius: 16px; overflow: hidden; border: 2px solid #334155;
             background: #000; 
         }
         
@@ -33,9 +29,10 @@
         @keyframes scanning { 0%, 100% { transform: translateY(-45px); } 50% { transform: translateY(45px); } }
 
         .card { background: #1e293b; width: 100%; max-width: 500px; padding: 20px; border-radius: 16px; margin-top: 15px; box-sizing: border-box; border: 1px solid #334155; }
-        .status-pill { display: inline-block; padding: 8px 16px; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; margin-bottom: 15px; text-transform: uppercase; }
+        .status-pill { display: inline-block; padding: 8px 16px; border-radius: 9999px; font-size: 0.85rem; font-weight: 700; margin-bottom: 15px; text-transform: uppercase; transition: all 0.2s; }
         .syncing { background: #475569; color: #cbd5e1; }
         .ready { background: #059669; color: #ecfdf5; }
+        .warning { background: var(--error); color: white; }
         
         input[type="text"] { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; font-size: 16px; margin-bottom: 10px; }
         button { width: 100%; padding: 14px; background: var(--primary); color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
@@ -53,7 +50,7 @@
     </div>
 
     <div class="card">
-        <span class="zoom-label">3.0x Macro Zoom Active — Keep Distance</span>
+        <span class="zoom-label">3.0x Ultra-Zoom Active — Stay Back 10-15cm</span>
         <div id="status" class="status-pill syncing">Initializing...</div>
         
         <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
@@ -62,15 +59,15 @@
         </div>
 
         <div id="manual-form" style="display: none; border-top: 1px solid #334155; padding-top: 15px;">
-            <span style="font-size: 0.7rem; color: #94a3b8;">ACTIVE CODE:</span>
+            <span style="font-size: 0.7rem; color: #94a3b8;">SCANNED SERIAL:</span>
             <strong id="display-serial" style="font-size: 1.2rem; color: #60a5fa; display: block; margin-bottom: 10px;">---</strong>
-            <input type="text" id="item-name" placeholder="Optional Item Name">
-            <button onclick="manualPush()">Push to Sheet</button>
+            <input type="text" id="item-name" placeholder="Item Name (Optional)">
+            <button onclick="manualPush()">Push to Database</button>
         </div>
         
         <div class="controls">
             <button id="torch-btn" style="display:none;" onclick="toggleTorch()">🔦 Flashlight</button>
-            <button style="background: #334155;" onclick="location.reload()">🔄 Refresh</button>
+            <button style="background: #334155;" onclick="location.reload()">🔄 Refresh Cache</button>
         </div>
     </div>
 
@@ -90,7 +87,6 @@
 
         async function startScanner() {
             html5QrCode = new Html5Qrcode("reader");
-            
             const config = { 
                 fps: 30, 
                 qrbox: { width: 300, height: 160 },
@@ -103,48 +99,54 @@
 
             try {
                 await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
-                
-                // FORCE 3.0X ZOOM
                 const track = html5QrCode.getRunningTrack();
                 const caps = track.getCapabilities();
                 if (caps.zoom) {
-                    // We set to 3.0 or the max the phone allows, whichever is lower
                     const targetZoom = Math.min(3.0, caps.zoom.max);
                     await track.applyConstraints({ advanced: [{ zoom: targetZoom }] });
                 }
                 if (caps.torch) torchBtn.style.display = "block";
-                
                 loadCache();
             } catch (err) {
                 statusEl.innerText = "Camera Error";
             }
         }
 
+        // FETCHING EXISTING DATA FROM BACKEND
         async function loadCache() {
             try {
                 const res = await fetch(`${scriptURL}?action=fetch`);
                 const data = await res.json();
                 data.serials.forEach(s => cache.add(String(s)));
-                statusEl.innerText = `Ready: ${cache.size} Items`;
+                statusEl.innerText = `READY: ${cache.size} ENTRIES`;
                 statusEl.className = "status-pill ready";
             } catch (e) {
-                statusEl.innerText = "Offline/Sync Error";
+                statusEl.innerText = "OFFLINE - CACHE EMPTY";
+                statusEl.className = "status-pill warning";
             }
         }
 
         function onScanSuccess(decodedText) {
             if (isLock) return;
-            if (cache.has(decodedText)) return;
 
-            // AUTO-RESET LOGIC:
-            // If new scan is different from current display, overwrite immediately
+            // 1. DUPLICATE CHECK (Against fetched database)
+            if (cache.has(decodedText)) {
+                statusEl.innerText = "DUPLICATE IGNORED";
+                statusEl.className = "status-pill warning";
+                return; 
+            }
+
+            // 2. AUTO-RESET / FOCUS LOGIC
+            // If it's a new code (different from what's currently being handled)
             if (decodedText !== serialTxt.innerText) {
-                if (navigator.vibrate) navigator.vibrate([50, 30, 50]); // Distinct "new focus" vibe
+                if (navigator.vibrate) navigator.vibrate([50, 30]); 
+                
+                statusEl.innerText = "NEW CODE DETECTED";
+                statusEl.className = "status-pill ready";
                 
                 serialTxt.innerText = decodedText;
-                nameInput.value = ""; // Clear old name for the new code
+                nameInput.value = ""; // Clear name field for new item
                 manualForm.style.display = "block";
-                statusEl.innerText = "New Code Focused";
 
                 if (contSwitch.checked) {
                     autoPush(decodedText);
@@ -154,14 +156,14 @@
 
         async function autoPush(serial) {
             isLock = true;
-            statusEl.innerText = "Auto-Pushing...";
+            statusEl.innerText = "PUSHING...";
             await sendData("", serial);
-            setTimeout(() => { isLock = false; }, 1500); 
+            setTimeout(() => { isLock = false; }, 1200); 
         }
 
         async function manualPush() {
             isLock = true;
-            statusEl.innerText = "Pushing...";
+            statusEl.innerText = "SENDING...";
             await sendData(nameInput.value, serialTxt.innerText);
             manualForm.style.display = "none";
             nameInput.value = "";
@@ -175,11 +177,13 @@
                 const res = await fetch(scriptURL + query);
                 const result = await res.json();
                 if (result.status === "success") {
-                    cache.add(serial);
-                    statusEl.innerText = `Success: ${serial}`;
+                    cache.add(serial); // Add to local duplicate check immediately
+                    statusEl.innerText = `SAVED: ${serial}`;
+                    statusEl.className = "status-pill ready";
                 }
             } catch (e) {
-                statusEl.innerText = "Push Failed";
+                statusEl.innerText = "SYNC FAILED";
+                statusEl.className = "status-pill warning";
             }
         }
 
